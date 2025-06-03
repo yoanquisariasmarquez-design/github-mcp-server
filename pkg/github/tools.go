@@ -53,6 +53,7 @@ func DefaultToolsetGroup(readOnly bool, getClient GetClientFn, getGQLClient GetG
 			toolsets.NewServerTool(SearchIssues(getClient, t)),
 			toolsets.NewServerTool(ListIssues(getClient, t)),
 			toolsets.NewServerTool(GetIssueComments(getClient, t)),
+			toolsets.NewServerTool(ListSubIssues(getClient, t)),
 		).
 		AddWriteTools(
 			toolsets.NewServerTool(CreateIssue(getClient, t)),
