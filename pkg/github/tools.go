@@ -61,6 +61,7 @@ func DefaultToolsetGroup(readOnly bool, getClient GetClientFn, getGQLClient GetG
 			toolsets.NewServerTool(UpdateIssue(getClient, t)),
 			toolsets.NewServerTool(AssignCopilotToIssue(getGQLClient, t)),
 			toolsets.NewServerTool(AddSubIssue(getClient, t)),
+			toolsets.NewServerTool(RemoveSubIssue(getClient, t)),
 		)
 	users := toolsets.NewToolset("users", "GitHub User related tools").
 		AddReadTools(
