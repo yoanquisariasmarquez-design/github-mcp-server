@@ -666,6 +666,29 @@ export GITHUB_MCP_TOOL_ADD_ISSUE_COMMENT_DESCRIPTION="an alternative description
     - `repo`: Repository name (string, required)
     - `prNumber`: Pull request number (string, required)
     - `path`: File or directory path (string, optional)
+    
+## Security Advisories
+
+- **`list_global_security_advisories`**
+  List global security advisories
+
+  - **Parameters**:
+    - * `ghsaId`: Filter by GitHub Security Advisory ID (string, optional – format: `GHSA-xxxx-xxxx-xxxx`)
+    - * `type`: Advisory type (string, optional – one of `reviewed`, `malware`, `unreviewed`)
+    - * `cveId`: Filter by CVE ID (string, optional)
+    - * `ecosystem`: Filter by package ecosystem (string, optional – one of `actions`, `composer`, `erlang`, `go`, `maven`, `npm`, `nuget`, `other`, `pip`, `pub`, `rubygems`, `rust`)
+    - * `severity`: Filter by severity (string, optional – one of `unknown`, `low`, `medium`, `high`, `critical`)
+    - * `cwes`: Filter by Common Weakness Enumeration IDs (array of strings, optional – e.g. `["79", "284", "22"]`)
+    - * `isWithdrawn`: Whether to only return withdrawn advisories (boolean, optional)
+    - * `affects`: Filter advisories by affected package or version (string, optional – e.g. `"package1,package2@1.0.0"`)
+    - * `published`: Filter by publish date or date range (string, optional – ISO 8601 date or range)
+    - * `updated`: Filter by update date or date range (string, optional – ISO 8601 date or range)
+    - * `modified`: Filter by publish or update date or date range (string, optional – ISO 8601 date or range)
+
+- **`get_global_security_advisory`**
+  Get a global security advisory
+
+  - **Template**: `advisories/{ghsaId}`
 
 ## Library Usage
 
