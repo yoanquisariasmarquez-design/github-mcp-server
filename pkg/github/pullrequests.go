@@ -533,6 +533,51 @@ func MergePullRequest(getClient GetClientFn, t translations.TranslationHelperFun
 		}
 }
 
+// SearchPullRequests creates a tool to search for pull requests.
+func SearchPullRequests(getClient GetClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
+	return mcp.NewTool("search_pull_requests",
+			mcp.WithDescription(t("TOOL_SEARCH_PULL_REQUESTS_DESCRIPTION", "Search for pull requests in GitHub repositories using issues search syntax already scoped to is:pr")),
+			mcp.WithToolAnnotation(mcp.ToolAnnotation{
+				Title:        t("TOOL_SEARCH_PULL_REQUESTS_USER_TITLE", "Search pull requests"),
+				ReadOnlyHint: ToBoolPtr(true),
+			}),
+			mcp.WithString("query",
+				mcp.Required(),
+				mcp.Description("Search query using GitHub pull request search syntax"),
+			),
+			mcp.WithString("owner",
+				mcp.Description("Optional repository owner. If provided with repo, only notifications for this repository are listed."),
+			),
+			mcp.WithString("repo",
+				mcp.Description("Optional repository name. If provided with owner, only notifications for this repository are listed."),
+			),
+			mcp.WithString("sort",
+				mcp.Description("Sort field by number of matches of categories, defaults to best match"),
+				mcp.Enum(
+					"comments",
+					"reactions",
+					"reactions-+1",
+					"reactions--1",
+					"reactions-smile",
+					"reactions-thinking_face",
+					"reactions-heart",
+					"reactions-tada",
+					"interactions",
+					"created",
+					"updated",
+				),
+			),
+			mcp.WithString("order",
+				mcp.Description("Sort order"),
+				mcp.Enum("asc", "desc"),
+			),
+			WithPagination(),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return searchHandler(ctx, getClient, request, "pr", "failed to search pull requests")
+		}
+}
+
 // GetPullRequestFiles creates a tool to get the list of files changed in a pull request.
 func GetPullRequestFiles(getClient GetClientFn, t translations.TranslationHelperFunc) (mcp.Tool, server.ToolHandlerFunc) {
 	return mcp.NewTool("get_pull_request_files",
