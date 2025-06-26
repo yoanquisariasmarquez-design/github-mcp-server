@@ -31,7 +31,8 @@ func Test_GetFileContents(t *testing.T) {
 	assert.Contains(t, tool.InputSchema.Properties, "owner")
 	assert.Contains(t, tool.InputSchema.Properties, "repo")
 	assert.Contains(t, tool.InputSchema.Properties, "path")
-	assert.Contains(t, tool.InputSchema.Properties, "branch")
+	assert.Contains(t, tool.InputSchema.Properties, "ref")
+	assert.Contains(t, tool.InputSchema.Properties, "sha")
 	assert.ElementsMatch(t, tool.InputSchema.Required, []string{"owner", "repo", "path"})
 
 	// Mock response for raw content
@@ -77,10 +78,10 @@ func Test_GetFileContents(t *testing.T) {
 				),
 			),
 			requestArgs: map[string]interface{}{
-				"owner":  "owner",
-				"repo":   "repo",
-				"path":   "README.md",
-				"branch": "main",
+				"owner": "owner",
+				"repo":  "repo",
+				"path":  "README.md",
+				"ref":   "refs/heads/main",
 			},
 			expectError: false,
 			expectedResult: mcp.TextResourceContents{
@@ -101,10 +102,10 @@ func Test_GetFileContents(t *testing.T) {
 				),
 			),
 			requestArgs: map[string]interface{}{
-				"owner":  "owner",
-				"repo":   "repo",
-				"path":   "test.png",
-				"branch": "main",
+				"owner": "owner",
+				"repo":  "repo",
+				"path":  "test.png",
+				"ref":   "refs/heads/main",
 			},
 			expectError: false,
 			expectedResult: mcp.BlobResourceContents{
@@ -158,10 +159,10 @@ func Test_GetFileContents(t *testing.T) {
 				),
 			),
 			requestArgs: map[string]interface{}{
-				"owner":  "owner",
-				"repo":   "repo",
-				"path":   "nonexistent.md",
-				"branch": "main",
+				"owner": "owner",
+				"repo":  "repo",
+				"path":  "nonexistent.md",
+				"ref":   "refs/heads/main",
 			},
 			expectError:    false,
 			expectedResult: mcp.NewToolResultError("Failed to get file contents. The path does not point to a file or directory, or the file does not exist in the repository."),
@@ -301,12 +302,15 @@ func Test_ForkRepository(t *testing.T) {
 
 			// Verify results
 			if tc.expectError {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedErrMsg)
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
 				return
 			}
 
 			require.NoError(t, err)
+			require.False(t, result.IsError)
 
 			// Parse the result and get the text content if no error
 			textContent := getTextResult(t, result)
@@ -488,12 +492,15 @@ func Test_CreateBranch(t *testing.T) {
 
 			// Verify results
 			if tc.expectError {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedErrMsg)
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
 				return
 			}
 
 			require.NoError(t, err)
+			require.False(t, result.IsError)
 
 			// Parse the result and get the text content if no error
 			textContent := getTextResult(t, result)
@@ -611,12 +618,15 @@ func Test_GetCommit(t *testing.T) {
 
 			// Verify results
 			if tc.expectError {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedErrMsg)
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
 				return
 			}
 
 			require.NoError(t, err)
+			require.False(t, result.IsError)
 
 			// Parse the result and get the text content if no error
 			textContent := getTextResult(t, result)
@@ -645,6 +655,7 @@ func Test_ListCommits(t *testing.T) {
 	assert.Contains(t, tool.InputSchema.Properties, "owner")
 	assert.Contains(t, tool.InputSchema.Properties, "repo")
 	assert.Contains(t, tool.InputSchema.Properties, "sha")
+	assert.Contains(t, tool.InputSchema.Properties, "author")
 	assert.Contains(t, tool.InputSchema.Properties, "page")
 	assert.Contains(t, tool.InputSchema.Properties, "perPage")
 	assert.ElementsMatch(t, tool.InputSchema.Required, []string{"owner", "repo"})
@@ -712,6 +723,7 @@ func Test_ListCommits(t *testing.T) {
 				mock.WithRequestMatchHandler(
 					mock.GetReposCommitsByOwnerByRepo,
 					expectQueryParams(t, map[string]string{
+						"author":   "username",
 						"sha":      "main",
 						"page":     "1",
 						"per_page": "30",
@@ -721,9 +733,10 @@ func Test_ListCommits(t *testing.T) {
 				),
 			),
 			requestArgs: map[string]interface{}{
-				"owner": "owner",
-				"repo":  "repo",
-				"sha":   "main",
+				"owner":  "owner",
+				"repo":   "repo",
+				"sha":    "main",
+				"author": "username",
 			},
 			expectError:     false,
 			expectedCommits: mockCommits,
@@ -784,12 +797,15 @@ func Test_ListCommits(t *testing.T) {
 
 			// Verify results
 			if tc.expectError {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedErrMsg)
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
 				return
 			}
 
 			require.NoError(t, err)
+			require.False(t, result.IsError)
 
 			// Parse the result and get the text content if no error
 			textContent := getTextResult(t, result)
@@ -800,6 +816,7 @@ func Test_ListCommits(t *testing.T) {
 			require.NoError(t, err)
 			assert.Len(t, returnedCommits, len(tc.expectedCommits))
 			for i, commit := range returnedCommits {
+				assert.Equal(t, *tc.expectedCommits[i].Author, *commit.Author)
 				assert.Equal(t, *tc.expectedCommits[i].SHA, *commit.SHA)
 				assert.Equal(t, *tc.expectedCommits[i].Commit.Message, *commit.Commit.Message)
 				assert.Equal(t, *tc.expectedCommits[i].Author.Login, *commit.Author.Login)
@@ -946,12 +963,15 @@ func Test_CreateOrUpdateFile(t *testing.T) {
 
 			// Verify results
 			if tc.expectError {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedErrMsg)
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
 				return
 			}
 
 			require.NoError(t, err)
+			require.False(t, result.IsError)
 
 			// Parse the result and get the text content if no error
 			textContent := getTextResult(t, result)
@@ -1095,12 +1115,15 @@ func Test_CreateRepository(t *testing.T) {
 
 			// Verify results
 			if tc.expectError {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedErrMsg)
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
 				return
 			}
 
 			require.NoError(t, err)
+			require.False(t, result.IsError)
 
 			// Parse the result and get the text content if no error
 			textContent := getTextResult(t, result)
@@ -1429,19 +1452,23 @@ func Test_PushFiles(t *testing.T) {
 
 			// Verify results
 			if tc.expectError {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedErrMsg)
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
 				return
 			}
 
 			if tc.expectedErrMsg != "" {
 				require.NotNil(t, result)
-				textContent := getTextResult(t, result)
-				assert.Contains(t, textContent.Text, tc.expectedErrMsg)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
 				return
 			}
 
 			require.NoError(t, err)
+			require.False(t, result.IsError)
 
 			// Parse the result and get the text content if no error
 			textContent := getTextResult(t, result)
@@ -1842,12 +1869,15 @@ func Test_ListTags(t *testing.T) {
 
 			// Verify results
 			if tc.expectError {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedErrMsg)
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
 				return
 			}
 
 			require.NoError(t, err)
+			require.False(t, result.IsError)
 
 			// Parse the result and get the text content if no error
 			textContent := getTextResult(t, result)
@@ -1993,12 +2023,15 @@ func Test_GetTag(t *testing.T) {
 
 			// Verify results
 			if tc.expectError {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedErrMsg)
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
 				return
 			}
 
 			require.NoError(t, err)
+			require.False(t, result.IsError)
 
 			// Parse the result and get the text content if no error
 			textContent := getTextResult(t, result)
