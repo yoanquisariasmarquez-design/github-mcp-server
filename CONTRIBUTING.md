@@ -24,7 +24,7 @@ These are one time installations required to be able to test your changes locall
 1. Make sure linter passes on your machine: `golangci-lint run`
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change, add tests, and make sure the tests and linter still pass
-1. Push to your fork and [submit a pull request][pr]
+1. Push to your fork and [submit a pull request][pr] targeting the `main` branch
 1. Pat yourself on the back and wait for your pull request to be reviewed and merged.
 
 Here are a few things you can do that will increase the likelihood of your pull request being accepted:

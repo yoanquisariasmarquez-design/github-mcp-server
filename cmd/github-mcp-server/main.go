@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/github/github-mcp-server/internal/ghmcp"
 	"github.com/github/github-mcp-server/pkg/github"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -54,7 +56,6 @@ var (
 				EnableCommandLogging: viper.GetBool("enable-command-logging"),
 				LogFilePath:          viper.GetString("log-file"),
 			}
-
 			return ghmcp.RunStdioServer(stdioServerConfig)
 		},
 	}
@@ -62,6 +63,7 @@ var (
 
 func init() {
 	cobra.OnInitialize(initConfig)
+	rootCmd.SetGlobalNormalizationFunc(wordSepNormalizeFunc)
 
 	rootCmd.SetVersionTemplate("{{.Short}}\n{{.Version}}\n")
 
@@ -91,6 +93,7 @@ func initConfig() {
 	// Initialize Viper configuration
 	viper.SetEnvPrefix("github")
 	viper.AutomaticEnv()
+
 }
 
 func main() {
@@ -98,4 +101,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
+}
+
+func wordSepNormalizeFunc(_ *pflag.FlagSet, name string) pflag.NormalizedName {
+	from := []string{"_"}
+	to := "-"
+	for _, sep := range from {
+		name = strings.ReplaceAll(name, sep, to)
+	}
+	return pflag.NormalizedName(name)
 }

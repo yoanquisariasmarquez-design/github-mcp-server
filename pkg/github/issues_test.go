@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/github/github-mcp-server/internal/githubv4mock"
+	"github.com/github/github-mcp-server/internal/toolsnaps"
 	"github.com/github/github-mcp-server/pkg/translations"
 	"github.com/google/go-github/v72/github"
 	"github.com/migueleliasweb/go-github-mock/src/mock"
@@ -21,6 +22,7 @@ func Test_GetIssue(t *testing.T) {
 	// Verify tool definition once
 	mockClient := github.NewClient(nil)
 	tool, _ := GetIssue(stubGetClientFn(mockClient), translations.NullTranslationHelper)
+	require.NoError(t, toolsnaps.Test(tool.Name, tool))
 
 	assert.Equal(t, "get_issue", tool.Name)
 	assert.NotEmpty(t, tool.Description)
@@ -117,6 +119,7 @@ func Test_AddIssueComment(t *testing.T) {
 	// Verify tool definition once
 	mockClient := github.NewClient(nil)
 	tool, _ := AddIssueComment(stubGetClientFn(mockClient), translations.NullTranslationHelper)
+	require.NoError(t, toolsnaps.Test(tool.Name, tool))
 
 	assert.Equal(t, "add_issue_comment", tool.Name)
 	assert.NotEmpty(t, tool.Description)
@@ -230,15 +233,18 @@ func Test_SearchIssues(t *testing.T) {
 	// Verify tool definition once
 	mockClient := github.NewClient(nil)
 	tool, _ := SearchIssues(stubGetClientFn(mockClient), translations.NullTranslationHelper)
+	require.NoError(t, toolsnaps.Test(tool.Name, tool))
 
 	assert.Equal(t, "search_issues", tool.Name)
 	assert.NotEmpty(t, tool.Description)
-	assert.Contains(t, tool.InputSchema.Properties, "q")
+	assert.Contains(t, tool.InputSchema.Properties, "query")
+	assert.Contains(t, tool.InputSchema.Properties, "owner")
+	assert.Contains(t, tool.InputSchema.Properties, "repo")
 	assert.Contains(t, tool.InputSchema.Properties, "sort")
 	assert.Contains(t, tool.InputSchema.Properties, "order")
 	assert.Contains(t, tool.InputSchema.Properties, "perPage")
 	assert.Contains(t, tool.InputSchema.Properties, "page")
-	assert.ElementsMatch(t, tool.InputSchema.Required, []string{"q"})
+	assert.ElementsMatch(t, tool.InputSchema.Required, []string{"query"})
 
 	// Setup mock search results
 	mockSearchResult := &github.IssuesSearchResult{
@@ -286,7 +292,7 @@ func Test_SearchIssues(t *testing.T) {
 					expectQueryParams(
 						t,
 						map[string]string{
-							"q":        "repo:owner/repo is:issue is:open",
+							"q":        "is:issue repo:owner/repo is:open",
 							"sort":     "created",
 							"order":    "desc",
 							"page":     "1",
@@ -298,11 +304,88 @@ func Test_SearchIssues(t *testing.T) {
 				),
 			),
 			requestArgs: map[string]interface{}{
-				"q":       "repo:owner/repo is:issue is:open",
+				"query":   "repo:owner/repo is:open",
 				"sort":    "created",
 				"order":   "desc",
 				"page":    float64(1),
 				"perPage": float64(30),
+			},
+			expectError:    false,
+			expectedResult: mockSearchResult,
+		},
+		{
+			name: "issues search with owner and repo parameters",
+			mockedClient: mock.NewMockedHTTPClient(
+				mock.WithRequestMatchHandler(
+					mock.GetSearchIssues,
+					expectQueryParams(
+						t,
+						map[string]string{
+							"q":        "repo:test-owner/test-repo is:issue is:open",
+							"sort":     "created",
+							"order":    "asc",
+							"page":     "1",
+							"per_page": "30",
+						},
+					).andThen(
+						mockResponse(t, http.StatusOK, mockSearchResult),
+					),
+				),
+			),
+			requestArgs: map[string]interface{}{
+				"query": "is:open",
+				"owner": "test-owner",
+				"repo":  "test-repo",
+				"sort":  "created",
+				"order": "asc",
+			},
+			expectError:    false,
+			expectedResult: mockSearchResult,
+		},
+		{
+			name: "issues search with only owner parameter (should ignore it)",
+			mockedClient: mock.NewMockedHTTPClient(
+				mock.WithRequestMatchHandler(
+					mock.GetSearchIssues,
+					expectQueryParams(
+						t,
+						map[string]string{
+							"q":        "is:issue bug",
+							"page":     "1",
+							"per_page": "30",
+						},
+					).andThen(
+						mockResponse(t, http.StatusOK, mockSearchResult),
+					),
+				),
+			),
+			requestArgs: map[string]interface{}{
+				"query": "bug",
+				"owner": "test-owner",
+			},
+			expectError:    false,
+			expectedResult: mockSearchResult,
+		},
+		{
+			name: "issues search with only repo parameter (should ignore it)",
+			mockedClient: mock.NewMockedHTTPClient(
+				mock.WithRequestMatchHandler(
+					mock.GetSearchIssues,
+					expectQueryParams(
+						t,
+						map[string]string{
+							"q":        "is:issue feature",
+							"page":     "1",
+							"per_page": "30",
+						},
+					).andThen(
+						mockResponse(t, http.StatusOK, mockSearchResult),
+					),
+				),
+			),
+			requestArgs: map[string]interface{}{
+				"query": "feature",
+				"repo":  "test-repo",
 			},
 			expectError:    false,
 			expectedResult: mockSearchResult,
@@ -316,7 +399,7 @@ func Test_SearchIssues(t *testing.T) {
 				),
 			),
 			requestArgs: map[string]interface{}{
-				"q": "repo:owner/repo is:issue is:open",
+				"query": "is:issue repo:owner/repo is:open",
 			},
 			expectError:    false,
 			expectedResult: mockSearchResult,
@@ -333,7 +416,7 @@ func Test_SearchIssues(t *testing.T) {
 				),
 			),
 			requestArgs: map[string]interface{}{
-				"q": "invalid:query",
+				"query": "invalid:query",
 			},
 			expectError:    true,
 			expectedErrMsg: "failed to search issues",
@@ -386,6 +469,7 @@ func Test_CreateIssue(t *testing.T) {
 	// Verify tool definition once
 	mockClient := github.NewClient(nil)
 	tool, _ := CreateIssue(stubGetClientFn(mockClient), translations.NullTranslationHelper)
+	require.NoError(t, toolsnaps.Test(tool.Name, tool))
 
 	assert.Equal(t, "create_issue", tool.Name)
 	assert.NotEmpty(t, tool.Description)
@@ -568,6 +652,7 @@ func Test_ListIssues(t *testing.T) {
 	// Verify tool definition
 	mockClient := github.NewClient(nil)
 	tool, _ := ListIssues(stubGetClientFn(mockClient), translations.NullTranslationHelper)
+	require.NoError(t, toolsnaps.Test(tool.Name, tool))
 
 	assert.Equal(t, "list_issues", tool.Name)
 	assert.NotEmpty(t, tool.Description)
@@ -744,6 +829,7 @@ func Test_UpdateIssue(t *testing.T) {
 	// Verify tool definition
 	mockClient := github.NewClient(nil)
 	tool, _ := UpdateIssue(stubGetClientFn(mockClient), translations.NullTranslationHelper)
+	require.NoError(t, toolsnaps.Test(tool.Name, tool))
 
 	assert.Equal(t, "update_issue", tool.Name)
 	assert.NotEmpty(t, tool.Description)
@@ -1012,6 +1098,7 @@ func Test_GetIssueComments(t *testing.T) {
 	// Verify tool definition once
 	mockClient := github.NewClient(nil)
 	tool, _ := GetIssueComments(stubGetClientFn(mockClient), translations.NullTranslationHelper)
+	require.NoError(t, toolsnaps.Test(tool.Name, tool))
 
 	assert.Equal(t, "get_issue_comments", tool.Name)
 	assert.NotEmpty(t, tool.Description)
@@ -1019,7 +1106,7 @@ func Test_GetIssueComments(t *testing.T) {
 	assert.Contains(t, tool.InputSchema.Properties, "repo")
 	assert.Contains(t, tool.InputSchema.Properties, "issue_number")
 	assert.Contains(t, tool.InputSchema.Properties, "page")
-	assert.Contains(t, tool.InputSchema.Properties, "per_page")
+	assert.Contains(t, tool.InputSchema.Properties, "perPage")
 	assert.ElementsMatch(t, tool.InputSchema.Required, []string{"owner", "repo", "issue_number"})
 
 	// Setup mock comments for success case
@@ -1084,7 +1171,7 @@ func Test_GetIssueComments(t *testing.T) {
 				"repo":         "repo",
 				"issue_number": float64(42),
 				"page":         float64(2),
-				"per_page":     float64(10),
+				"perPage":      float64(10),
 			},
 			expectError:      false,
 			expectedComments: mockComments,
@@ -1148,6 +1235,7 @@ func TestAssignCopilotToIssue(t *testing.T) {
 	// Verify tool definition
 	mockClient := githubv4.NewClient(nil)
 	tool, _ := AssignCopilotToIssue(stubGetGQLClientFn(mockClient), translations.NullTranslationHelper)
+	require.NoError(t, toolsnaps.Test(tool.Name, tool))
 
 	assert.Equal(t, "assign_copilot_to_issue", tool.Name)
 	assert.NotEmpty(t, tool.Description)

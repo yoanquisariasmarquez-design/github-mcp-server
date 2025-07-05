@@ -23,7 +23,7 @@ func GetIssue(getClient GetClientFn, t translations.TranslationHelperFunc) (tool
 			mcp.WithDescription(t("TOOL_GET_ISSUE_DESCRIPTION", "Get details of a specific issue in a GitHub repository.")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
 				Title:        t("TOOL_GET_ISSUE_USER_TITLE", "Get issue details"),
-				ReadOnlyHint: toBoolPtr(true),
+				ReadOnlyHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("owner",
 				mcp.Required(),
@@ -39,11 +39,11 @@ func GetIssue(getClient GetClientFn, t translations.TranslationHelperFunc) (tool
 			),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			owner, err := requiredParam[string](request, "owner")
+			owner, err := RequiredParam[string](request, "owner")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			repo, err := requiredParam[string](request, "repo")
+			repo, err := RequiredParam[string](request, "repo")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -85,7 +85,7 @@ func AddIssueComment(getClient GetClientFn, t translations.TranslationHelperFunc
 			mcp.WithDescription(t("TOOL_ADD_ISSUE_COMMENT_DESCRIPTION", "Add a comment to a specific issue in a GitHub repository.")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
 				Title:        t("TOOL_ADD_ISSUE_COMMENT_USER_TITLE", "Add comment to issue"),
-				ReadOnlyHint: toBoolPtr(false),
+				ReadOnlyHint: ToBoolPtr(false),
 			}),
 			mcp.WithString("owner",
 				mcp.Required(),
@@ -105,11 +105,11 @@ func AddIssueComment(getClient GetClientFn, t translations.TranslationHelperFunc
 			),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			owner, err := requiredParam[string](request, "owner")
+			owner, err := RequiredParam[string](request, "owner")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			repo, err := requiredParam[string](request, "repo")
+			repo, err := RequiredParam[string](request, "repo")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -117,7 +117,7 @@ func AddIssueComment(getClient GetClientFn, t translations.TranslationHelperFunc
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			body, err := requiredParam[string](request, "body")
+			body, err := RequiredParam[string](request, "body")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -153,17 +153,23 @@ func AddIssueComment(getClient GetClientFn, t translations.TranslationHelperFunc
 		}
 }
 
-// SearchIssues creates a tool to search for issues and pull requests.
+// SearchIssues creates a tool to search for issues.
 func SearchIssues(getClient GetClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
 	return mcp.NewTool("search_issues",
-			mcp.WithDescription(t("TOOL_SEARCH_ISSUES_DESCRIPTION", "Search for issues in GitHub repositories.")),
+			mcp.WithDescription(t("TOOL_SEARCH_ISSUES_DESCRIPTION", "Search for issues in GitHub repositories using issues search syntax already scoped to is:issue")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
 				Title:        t("TOOL_SEARCH_ISSUES_USER_TITLE", "Search issues"),
-				ReadOnlyHint: toBoolPtr(true),
+				ReadOnlyHint: ToBoolPtr(true),
 			}),
-			mcp.WithString("q",
+			mcp.WithString("query",
 				mcp.Required(),
 				mcp.Description("Search query using GitHub issues search syntax"),
+			),
+			mcp.WithString("owner",
+				mcp.Description("Optional repository owner. If provided with repo, only notifications for this repository are listed."),
+			),
+			mcp.WithString("repo",
+				mcp.Description("Optional repository name. If provided with owner, only notifications for this repository are listed."),
 			),
 			mcp.WithString("sort",
 				mcp.Description("Sort field by number of matches of categories, defaults to best match"),
@@ -188,56 +194,7 @@ func SearchIssues(getClient GetClientFn, t translations.TranslationHelperFunc) (
 			WithPagination(),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			query, err := requiredParam[string](request, "q")
-			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
-			}
-			sort, err := OptionalParam[string](request, "sort")
-			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
-			}
-			order, err := OptionalParam[string](request, "order")
-			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
-			}
-			pagination, err := OptionalPaginationParams(request)
-			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
-			}
-
-			opts := &github.SearchOptions{
-				Sort:  sort,
-				Order: order,
-				ListOptions: github.ListOptions{
-					PerPage: pagination.perPage,
-					Page:    pagination.page,
-				},
-			}
-
-			client, err := getClient(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get GitHub client: %w", err)
-			}
-			result, resp, err := client.Search.Issues(ctx, query, opts)
-			if err != nil {
-				return nil, fmt.Errorf("failed to search issues: %w", err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			if resp.StatusCode != http.StatusOK {
-				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					return nil, fmt.Errorf("failed to read response body: %w", err)
-				}
-				return mcp.NewToolResultError(fmt.Sprintf("failed to search issues: %s", string(body))), nil
-			}
-
-			r, err := json.Marshal(result)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal response: %w", err)
-			}
-
-			return mcp.NewToolResultText(string(r)), nil
+			return searchHandler(ctx, getClient, request, "issue", "failed to search issues")
 		}
 }
 
@@ -247,7 +204,7 @@ func CreateIssue(getClient GetClientFn, t translations.TranslationHelperFunc) (t
 			mcp.WithDescription(t("TOOL_CREATE_ISSUE_DESCRIPTION", "Create a new issue in a GitHub repository.")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
 				Title:        t("TOOL_CREATE_ISSUE_USER_TITLE", "Open new issue"),
-				ReadOnlyHint: toBoolPtr(false),
+				ReadOnlyHint: ToBoolPtr(false),
 			}),
 			mcp.WithString("owner",
 				mcp.Required(),
@@ -288,15 +245,15 @@ func CreateIssue(getClient GetClientFn, t translations.TranslationHelperFunc) (t
 			),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			owner, err := requiredParam[string](request, "owner")
+			owner, err := RequiredParam[string](request, "owner")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			repo, err := requiredParam[string](request, "repo")
+			repo, err := RequiredParam[string](request, "repo")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			title, err := requiredParam[string](request, "title")
+			title, err := RequiredParam[string](request, "title")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -379,7 +336,7 @@ func ListIssues(getClient GetClientFn, t translations.TranslationHelperFunc) (to
 			mcp.WithDescription(t("TOOL_LIST_ISSUES_DESCRIPTION", "List issues in a GitHub repository.")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
 				Title:        t("TOOL_LIST_ISSUES_USER_TITLE", "List issues"),
-				ReadOnlyHint: toBoolPtr(true),
+				ReadOnlyHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("owner",
 				mcp.Required(),
@@ -415,11 +372,11 @@ func ListIssues(getClient GetClientFn, t translations.TranslationHelperFunc) (to
 			WithPagination(),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			owner, err := requiredParam[string](request, "owner")
+			owner, err := RequiredParam[string](request, "owner")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			repo, err := requiredParam[string](request, "repo")
+			repo, err := RequiredParam[string](request, "repo")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -501,7 +458,7 @@ func UpdateIssue(getClient GetClientFn, t translations.TranslationHelperFunc) (t
 			mcp.WithDescription(t("TOOL_UPDATE_ISSUE_DESCRIPTION", "Update an existing issue in a GitHub repository.")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
 				Title:        t("TOOL_UPDATE_ISSUE_USER_TITLE", "Edit issue"),
-				ReadOnlyHint: toBoolPtr(false),
+				ReadOnlyHint: ToBoolPtr(false),
 			}),
 			mcp.WithString("owner",
 				mcp.Required(),
@@ -549,11 +506,11 @@ func UpdateIssue(getClient GetClientFn, t translations.TranslationHelperFunc) (t
 			),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			owner, err := requiredParam[string](request, "owner")
+			owner, err := RequiredParam[string](request, "owner")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			repo, err := requiredParam[string](request, "repo")
+			repo, err := RequiredParam[string](request, "repo")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -659,7 +616,7 @@ func GetIssueComments(getClient GetClientFn, t translations.TranslationHelperFun
 			mcp.WithDescription(t("TOOL_GET_ISSUE_COMMENTS_DESCRIPTION", "Get comments for a specific issue in a GitHub repository.")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
 				Title:        t("TOOL_GET_ISSUE_COMMENTS_USER_TITLE", "Get issue comments"),
-				ReadOnlyHint: toBoolPtr(true),
+				ReadOnlyHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("owner",
 				mcp.Required(),
@@ -673,19 +630,14 @@ func GetIssueComments(getClient GetClientFn, t translations.TranslationHelperFun
 				mcp.Required(),
 				mcp.Description("Issue number"),
 			),
-			mcp.WithNumber("page",
-				mcp.Description("Page number"),
-			),
-			mcp.WithNumber("per_page",
-				mcp.Description("Number of records per page"),
-			),
+			WithPagination(),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			owner, err := requiredParam[string](request, "owner")
+			owner, err := RequiredParam[string](request, "owner")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			repo, err := requiredParam[string](request, "repo")
+			repo, err := RequiredParam[string](request, "repo")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -693,19 +645,15 @@ func GetIssueComments(getClient GetClientFn, t translations.TranslationHelperFun
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			page, err := OptionalIntParamWithDefault(request, "page", 1)
-			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
-			}
-			perPage, err := OptionalIntParamWithDefault(request, "per_page", 30)
+			pagination, err := OptionalPaginationParams(request)
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
 			opts := &github.IssueListCommentsOptions{
 				ListOptions: github.ListOptions{
-					Page:    page,
-					PerPage: perPage,
+					Page:    pagination.page,
+					PerPage: pagination.perPage,
 				},
 			}
 
@@ -781,8 +729,8 @@ func AssignCopilotToIssue(getGQLClient GetGQLClientFn, t translations.Translatio
 			mcp.WithDescription(t("TOOL_ASSIGN_COPILOT_TO_ISSUE_DESCRIPTION", description.String())),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
 				Title:          t("TOOL_ASSIGN_COPILOT_TO_ISSUE_USER_TITLE", "Assign Copilot to issue"),
-				ReadOnlyHint:   toBoolPtr(false),
-				IdempotentHint: toBoolPtr(true),
+				ReadOnlyHint:   ToBoolPtr(false),
+				IdempotentHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("owner",
 				mcp.Required(),
@@ -952,4 +900,43 @@ func parseISOTimestamp(timestamp string) (time.Time, error) {
 
 	// Return error with supported formats
 	return time.Time{}, fmt.Errorf("invalid ISO 8601 timestamp: %s (supported formats: YYYY-MM-DDThh:mm:ssZ or YYYY-MM-DD)", timestamp)
+}
+
+func AssignCodingAgentPrompt(t translations.TranslationHelperFunc) (tool mcp.Prompt, handler server.PromptHandlerFunc) {
+	return mcp.NewPrompt("AssignCodingAgent",
+			mcp.WithPromptDescription(t("PROMPT_ASSIGN_CODING_AGENT_DESCRIPTION", "Assign GitHub Coding Agent to multiple tasks in a GitHub repository.")),
+			mcp.WithArgument("repo", mcp.ArgumentDescription("The repository to assign tasks in (owner/repo)."), mcp.RequiredArgument()),
+		), func(_ context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			repo := request.Params.Arguments["repo"]
+
+			messages := []mcp.PromptMessage{
+				{
+					Role:    "system",
+					Content: mcp.NewTextContent("You are a personal assistant for GitHub the Copilot GitHub Coding Agent. Your task is to help the user assign tasks to the Coding Agent based on their open GitHub issues. You can use `assign_copilot_to_issue` tool to assign the Coding Agent to issues that are suitable for autonomous work, and `search_issues` tool to find issues that match the user's criteria. You can also use `list_issues` to get a list of issues in the repository."),
+				},
+				{
+					Role:    "user",
+					Content: mcp.NewTextContent(fmt.Sprintf("Please go and get a list of the most recent 10 issues from the %s GitHub repository", repo)),
+				},
+				{
+					Role:    "assistant",
+					Content: mcp.NewTextContent(fmt.Sprintf("Sure! I will get a list of the 10 most recent issues for the repo %s.", repo)),
+				},
+				{
+					Role:    "user",
+					Content: mcp.NewTextContent("For each issue, please check if it is a clearly defined coding task with acceptance criteria and a low to medium complexity to identify issues that are suitable for an AI Coding Agent to work on. Then assign each of the identified issues to Copilot."),
+				},
+				{
+					Role:    "assistant",
+					Content: mcp.NewTextContent("Certainly! Let me carefully check which ones are clearly scoped issues that are good to assign to the coding agent, and I will summarize and assign them now."),
+				},
+				{
+					Role:    "user",
+					Content: mcp.NewTextContent("Great, if you are unsure if an issue is good to assign, ask me first, rather than assigning copilot. If you are certain the issue is clear and suitable you can assign it to Copilot without asking."),
+				},
+			}
+			return &mcp.GetPromptResult{
+				Messages: messages,
+			}, nil
+		}
 }

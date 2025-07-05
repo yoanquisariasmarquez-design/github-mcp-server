@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/github/github-mcp-server/internal/toolsnaps"
 	"github.com/github/github-mcp-server/pkg/translations"
 	"github.com/google/go-github/v72/github"
 	"github.com/migueleliasweb/go-github-mock/src/mock"
@@ -17,6 +18,7 @@ func Test_SearchRepositories(t *testing.T) {
 	// Verify tool definition once
 	mockClient := github.NewClient(nil)
 	tool, _ := SearchRepositories(stubGetClientFn(mockClient), translations.NullTranslationHelper)
+	require.NoError(t, toolsnaps.Test(tool.Name, tool))
 
 	assert.Equal(t, "search_repositories", tool.Name)
 	assert.NotEmpty(t, tool.Description)
@@ -132,12 +134,15 @@ func Test_SearchRepositories(t *testing.T) {
 
 			// Verify results
 			if tc.expectError {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedErrMsg)
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
 				return
 			}
 
 			require.NoError(t, err)
+			require.False(t, result.IsError)
 
 			// Parse the result and get the text content if no error
 			textContent := getTextResult(t, result)
@@ -164,6 +169,7 @@ func Test_SearchCode(t *testing.T) {
 	// Verify tool definition once
 	mockClient := github.NewClient(nil)
 	tool, _ := SearchCode(stubGetClientFn(mockClient), translations.NullTranslationHelper)
+	require.NoError(t, toolsnaps.Test(tool.Name, tool))
 
 	assert.Equal(t, "search_code", tool.Name)
 	assert.NotEmpty(t, tool.Description)
@@ -283,12 +289,15 @@ func Test_SearchCode(t *testing.T) {
 
 			// Verify results
 			if tc.expectError {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedErrMsg)
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
 				return
 			}
 
 			require.NoError(t, err)
+			require.False(t, result.IsError)
 
 			// Parse the result and get the text content if no error
 			textContent := getTextResult(t, result)
@@ -315,15 +324,16 @@ func Test_SearchUsers(t *testing.T) {
 	// Verify tool definition once
 	mockClient := github.NewClient(nil)
 	tool, _ := SearchUsers(stubGetClientFn(mockClient), translations.NullTranslationHelper)
+	require.NoError(t, toolsnaps.Test(tool.Name, tool))
 
 	assert.Equal(t, "search_users", tool.Name)
 	assert.NotEmpty(t, tool.Description)
-	assert.Contains(t, tool.InputSchema.Properties, "q")
+	assert.Contains(t, tool.InputSchema.Properties, "query")
 	assert.Contains(t, tool.InputSchema.Properties, "sort")
 	assert.Contains(t, tool.InputSchema.Properties, "order")
 	assert.Contains(t, tool.InputSchema.Properties, "perPage")
 	assert.Contains(t, tool.InputSchema.Properties, "page")
-	assert.ElementsMatch(t, tool.InputSchema.Required, []string{"q"})
+	assert.ElementsMatch(t, tool.InputSchema.Required, []string{"query"})
 
 	// Setup mock search results
 	mockSearchResult := &github.UsersSearchResult{
@@ -371,7 +381,7 @@ func Test_SearchUsers(t *testing.T) {
 				),
 			),
 			requestArgs: map[string]interface{}{
-				"q":       "location:finland language:go",
+				"query":   "location:finland language:go",
 				"sort":    "followers",
 				"order":   "desc",
 				"page":    float64(1),
@@ -395,7 +405,7 @@ func Test_SearchUsers(t *testing.T) {
 				),
 			),
 			requestArgs: map[string]interface{}{
-				"q": "location:finland language:go",
+				"query": "location:finland language:go",
 			},
 			expectError:    false,
 			expectedResult: mockSearchResult,
@@ -412,7 +422,7 @@ func Test_SearchUsers(t *testing.T) {
 				),
 			),
 			requestArgs: map[string]interface{}{
-				"q": "invalid:query",
+				"query": "invalid:query",
 			},
 			expectError:    true,
 			expectedErrMsg: "failed to search users",
@@ -433,12 +443,15 @@ func Test_SearchUsers(t *testing.T) {
 
 			// Verify results
 			if tc.expectError {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedErrMsg)
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
 				return
 			}
 
 			require.NoError(t, err)
+			require.False(t, result.IsError)
 
 			// Parse the result and get the text content if no error
 			require.NotNil(t, result)
@@ -457,6 +470,130 @@ func Test_SearchUsers(t *testing.T) {
 				assert.Equal(t, *tc.expectedResult.Users[i].ID, user.ID)
 				assert.Equal(t, *tc.expectedResult.Users[i].HTMLURL, user.ProfileURL)
 				assert.Equal(t, *tc.expectedResult.Users[i].AvatarURL, user.AvatarURL)
+			}
+		})
+	}
+}
+
+func Test_SearchOrgs(t *testing.T) {
+	// Verify tool definition once
+	mockClient := github.NewClient(nil)
+	tool, _ := SearchOrgs(stubGetClientFn(mockClient), translations.NullTranslationHelper)
+
+	assert.Equal(t, "search_orgs", tool.Name)
+	assert.NotEmpty(t, tool.Description)
+	assert.Contains(t, tool.InputSchema.Properties, "query")
+	assert.Contains(t, tool.InputSchema.Properties, "sort")
+	assert.Contains(t, tool.InputSchema.Properties, "order")
+	assert.Contains(t, tool.InputSchema.Properties, "perPage")
+	assert.Contains(t, tool.InputSchema.Properties, "page")
+	assert.ElementsMatch(t, tool.InputSchema.Required, []string{"query"})
+
+	// Setup mock search results
+	mockSearchResult := &github.UsersSearchResult{
+		Total:             github.Ptr(int(2)),
+		IncompleteResults: github.Ptr(false),
+		Users: []*github.User{
+			{
+				Login:     github.Ptr("org-1"),
+				ID:        github.Ptr(int64(111)),
+				HTMLURL:   github.Ptr("https://github.com/org-1"),
+				AvatarURL: github.Ptr("https://avatars.githubusercontent.com/u/111?v=4"),
+			},
+			{
+				Login:     github.Ptr("org-2"),
+				ID:        github.Ptr(int64(222)),
+				HTMLURL:   github.Ptr("https://github.com/org-2"),
+				AvatarURL: github.Ptr("https://avatars.githubusercontent.com/u/222?v=4"),
+			},
+		},
+	}
+
+	tests := []struct {
+		name           string
+		mockedClient   *http.Client
+		requestArgs    map[string]interface{}
+		expectError    bool
+		expectedResult *github.UsersSearchResult
+		expectedErrMsg string
+	}{
+		{
+			name: "successful org search",
+			mockedClient: mock.NewMockedHTTPClient(
+				mock.WithRequestMatchHandler(
+					mock.GetSearchUsers,
+					expectQueryParams(t, map[string]string{
+						"q":        "type:org github",
+						"page":     "1",
+						"per_page": "30",
+					}).andThen(
+						mockResponse(t, http.StatusOK, mockSearchResult),
+					),
+				),
+			),
+			requestArgs: map[string]interface{}{
+				"query": "github",
+			},
+			expectError:    false,
+			expectedResult: mockSearchResult,
+		},
+		{
+			name: "org search fails",
+			mockedClient: mock.NewMockedHTTPClient(
+				mock.WithRequestMatchHandler(
+					mock.GetSearchUsers,
+					http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						w.WriteHeader(http.StatusBadRequest)
+						_, _ = w.Write([]byte(`{"message": "Validation Failed"}`))
+					}),
+				),
+			),
+			requestArgs: map[string]interface{}{
+				"query": "invalid:query",
+			},
+			expectError:    true,
+			expectedErrMsg: "failed to search orgs",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup client with mock
+			client := github.NewClient(tc.mockedClient)
+			_, handler := SearchOrgs(stubGetClientFn(client), translations.NullTranslationHelper)
+
+			// Create call request
+			request := createMCPRequest(tc.requestArgs)
+
+			// Call handler
+			result, err := handler(context.Background(), request)
+
+			// Verify results
+			if tc.expectError {
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				errorContent := getErrorResult(t, result)
+				assert.Contains(t, errorContent.Text, tc.expectedErrMsg)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+
+			textContent := getTextResult(t, result)
+
+			// Unmarshal and verify the result
+			var returnedResult MinimalSearchUsersResult
+			err = json.Unmarshal([]byte(textContent.Text), &returnedResult)
+			require.NoError(t, err)
+			assert.Equal(t, *tc.expectedResult.Total, returnedResult.TotalCount)
+			assert.Equal(t, *tc.expectedResult.IncompleteResults, returnedResult.IncompleteResults)
+			assert.Len(t, returnedResult.Items, len(tc.expectedResult.Users))
+			for i, org := range returnedResult.Items {
+				assert.Equal(t, *tc.expectedResult.Users[i].Login, org.Login)
+				assert.Equal(t, *tc.expectedResult.Users[i].ID, org.ID)
+				assert.Equal(t, *tc.expectedResult.Users[i].HTMLURL, org.ProfileURL)
+				assert.Equal(t, *tc.expectedResult.Users[i].AvatarURL, org.AvatarURL)
 			}
 		})
 	}

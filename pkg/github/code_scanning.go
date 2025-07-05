@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 
+	ghErrors "github.com/github/github-mcp-server/pkg/errors"
 	"github.com/github/github-mcp-server/pkg/translations"
 	"github.com/google/go-github/v72/github"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -18,7 +19,7 @@ func GetCodeScanningAlert(getClient GetClientFn, t translations.TranslationHelpe
 			mcp.WithDescription(t("TOOL_GET_CODE_SCANNING_ALERT_DESCRIPTION", "Get details of a specific code scanning alert in a GitHub repository.")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
 				Title:        t("TOOL_GET_CODE_SCANNING_ALERT_USER_TITLE", "Get code scanning alert"),
-				ReadOnlyHint: toBoolPtr(true),
+				ReadOnlyHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("owner",
 				mcp.Required(),
@@ -34,11 +35,11 @@ func GetCodeScanningAlert(getClient GetClientFn, t translations.TranslationHelpe
 			),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			owner, err := requiredParam[string](request, "owner")
+			owner, err := RequiredParam[string](request, "owner")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			repo, err := requiredParam[string](request, "repo")
+			repo, err := RequiredParam[string](request, "repo")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -54,7 +55,11 @@ func GetCodeScanningAlert(getClient GetClientFn, t translations.TranslationHelpe
 
 			alert, resp, err := client.CodeScanning.GetAlert(ctx, owner, repo, int64(alertNumber))
 			if err != nil {
-				return nil, fmt.Errorf("failed to get alert: %w", err)
+				return ghErrors.NewGitHubAPIErrorResponse(ctx,
+					"failed to get alert",
+					resp,
+					err,
+				), nil
 			}
 			defer func() { _ = resp.Body.Close() }()
 
@@ -80,7 +85,7 @@ func ListCodeScanningAlerts(getClient GetClientFn, t translations.TranslationHel
 			mcp.WithDescription(t("TOOL_LIST_CODE_SCANNING_ALERTS_DESCRIPTION", "List code scanning alerts in a GitHub repository.")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
 				Title:        t("TOOL_LIST_CODE_SCANNING_ALERTS_USER_TITLE", "List code scanning alerts"),
-				ReadOnlyHint: toBoolPtr(true),
+				ReadOnlyHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("owner",
 				mcp.Required(),
@@ -107,11 +112,11 @@ func ListCodeScanningAlerts(getClient GetClientFn, t translations.TranslationHel
 			),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			owner, err := requiredParam[string](request, "owner")
+			owner, err := RequiredParam[string](request, "owner")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			repo, err := requiredParam[string](request, "repo")
+			repo, err := RequiredParam[string](request, "repo")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -138,7 +143,11 @@ func ListCodeScanningAlerts(getClient GetClientFn, t translations.TranslationHel
 			}
 			alerts, resp, err := client.CodeScanning.ListAlertsForRepo(ctx, owner, repo, &github.AlertListOptions{Ref: ref, State: state, Severity: severity, ToolName: toolName})
 			if err != nil {
-				return nil, fmt.Errorf("failed to list alerts: %w", err)
+				return ghErrors.NewGitHubAPIErrorResponse(ctx,
+					"failed to list alerts",
+					resp,
+					err,
+				), nil
 			}
 			defer func() { _ = resp.Body.Close() }()
 
