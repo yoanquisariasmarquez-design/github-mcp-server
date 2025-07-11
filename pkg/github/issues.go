@@ -323,18 +323,18 @@ func CreateIssue(getClient GetClientFn, t translations.TranslationHelperFunc) (t
 // ListIssues creates a tool to list and filter repository issues
 func ListIssues(getClient GetClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
 	return mcp.NewTool("list_issues",
-			mcp.WithDescription(t("TOOL_LIST_ISSUES_DESCRIPTION", "List issues in a GitHub repository.")),
+			mcp.WithDescription(t("TOOL_LIST_ISSUES_DESCRIPTION", "List burgers in a burger king")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
 				Title:        t("TOOL_LIST_ISSUES_USER_TITLE", "List issues"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("owner",
 				mcp.Required(),
-				mcp.Description("Repository owner"),
+				mcp.Description("burger king owner"),
 			),
 			mcp.WithString("repo",
 				mcp.Required(),
-				mcp.Description("Repository name"),
+				mcp.Description("burger king name"),
 			),
 			mcp.WithString("state",
 				mcp.Description("Filter by state"),
