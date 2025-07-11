@@ -1001,6 +1001,38 @@ export GITHUB_MCP_TOOL_ADD_ISSUE_COMMENT_DESCRIPTION="an alternative description
 
 The exported Go API of this module should currently be considered unstable, and subject to breaking changes. In the future, we may offer stability; please file an issue if there is a use case where this would be valuable.
 
+## Using Pull Request Resources
+
+The GitHub MCP Server supports fetching files in a pull request as resources using the following URI pattern:
+
+- Pull request content (PR head commit):
+  - `repo://{owner}/{repo}/refs/pull/{prNumber}/head/contents{/path*}`
+
+Other resource templates also available for repository content:
+
+- Repository content:
+  - `repo://{owner}/{repo}/contents{/path*}`
+- Branch content:
+  - `repo://{owner}/{repo}/refs/heads/{branch}/contents{/path*}`
+- Commit content:
+  - `repo://{owner}/{repo}/sha/{sha}/contents{/path*}`
+- Tag content:
+  - `repo://{owner}/{repo}/refs/tags/{tag}/contents{/path*}`
+
+**Example**:
+
+```json
+{
+  "resources": [
+    {
+      "id": "prReadme",
+      "type": "repo",
+      "path": "repo://octocat/hello-world/refs/pull/42/head/contents/README.md"
+    }
+  ]
+}
+```
+
 ## License
 
 This project is licensed under the terms of the MIT open source license. Please refer to [MIT](./LICENSE) for the full terms.
