@@ -278,3 +278,9 @@ func Test_GetRepositoryResourceTagContent(t *testing.T) {
 	tmpl, _ := GetRepositoryResourceTagContent(nil, stubGetRawClientFn(mockRawClient), translations.NullTranslationHelper)
 	require.Equal(t, "repo://{owner}/{repo}/refs/tags/{tag}/contents{/path*}", tmpl.URITemplate.Raw())
 }
+
+func Test_GetRepositoryResourcePrContent(t *testing.T) {
+	mockRawClient := raw.NewClient(github.NewClient(nil), &url.URL{})
+	tmpl, _ := GetRepositoryResourcePrContent(nil, stubGetRawClientFn(mockRawClient), translations.NullTranslationHelper)
+	require.Equal(t, "repo://{owner}/{repo}/refs/pull/{prNumber}/head/contents{/path*}", tmpl.URITemplate.Raw())
+}

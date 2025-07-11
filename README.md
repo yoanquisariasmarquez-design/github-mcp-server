@@ -1001,6 +1001,29 @@ export GITHUB_MCP_TOOL_ADD_ISSUE_COMMENT_DESCRIPTION="an alternative description
 
 The exported Go API of this module should currently be considered unstable, and subject to breaking changes. In the future, we may offer stability; please file an issue if there is a use case where this would be valuable.
 
+## Resource URI Templates
+
+The GitHub MCP Server supports accessing repository file contents via resource URI templates. These templates use the `repo://` scheme to reference repository contents for different Git references:
+
+```text
+repo://{owner}/{repo}/contents{/path*}
+repo://{owner}/{repo}/refs/heads/{branch}/contents{/path*}
+repo://{owner}/{repo}/sha/{sha}/contents{/path*}
+repo://{owner}/{repo}/refs/tags/{tag}/contents{/path*}
+repo://{owner}/{repo}/refs/pull/{prNumber}/head/contents{/path*}
+```
+
+- **owner**: Repository owner (e.g., `octocat`).
+- **repo**: Repository name (e.g., `Hello-World`).
+- **branch**, **tag**, **sha**, **prNumber**: Git reference (branch name, tag name, commit SHA, or pull request number).
+- **path**: File path relative to the repository root (one or more segments). Must specify a file, not a directory.
+
+Example: To fetch `README.md` from the head commit of pull request #42 in the `octocat/Hello-World` repository:
+
+```text
+repo://octocat/Hello-World/refs/pull/42/head/contents/README.md
+```
+
 ## License
 
 This project is licensed under the terms of the MIT open source license. Please refer to [MIT](./LICENSE) for the full terms.
