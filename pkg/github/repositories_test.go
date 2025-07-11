@@ -167,6 +167,37 @@ func Test_GetFileContents(t *testing.T) {
 			expectError:    false,
 			expectedResult: mcp.NewToolResultError("Failed to get file contents. The path does not point to a file or directory, or the file does not exist in the repository."),
 		},
+		{
+			name: "successful PR head content fetch",
+			mockedClient: mock.NewMockedHTTPClient(
+				mock.WithRequestMatchHandler(
+					mock.GetReposPullsByOwnerByRepoByPullNumber,
+					http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						w.Header().Set("Content-Type", "application/json")
+						_, _ = w.Write([]byte(`{"head":{"sha":"prsha"}}`))
+					}),
+				),
+				mock.WithRequestMatchHandler(
+					raw.GetRawReposContentsByOwnerByRepoBySHAByPath,
+					http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						w.Header().Set("Content-Type", "text/plain")
+						_, _ = w.Write([]byte("PR content"))
+					}),
+				),
+			),
+			requestArgs: map[string]interface{}{
+				"owner": "owner",
+				"repo":  "repo",
+				"path":  "file.txt",
+				"ref":   "refs/pull/5/head",
+			},
+			expectError: false,
+			expectedResult: mcp.TextResourceContents{
+				URI:      "repo://owner/repo/sha/prsha/contents/file.txt",
+				Text:     "PR content",
+				MIMEType: "text/plain",
+			},
+		},
 	}
 
 	for _, tc := range tests {

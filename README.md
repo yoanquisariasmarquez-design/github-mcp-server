@@ -900,7 +900,7 @@ export GITHUB_MCP_TOOL_ADD_ISSUE_COMMENT_DESCRIPTION="an alternative description
 - **get_file_contents** - Get file or directory contents
   - `owner`: Repository owner (username or organization) (string, required)
   - `path`: Path to file/directory (directories must end with a slash '/') (string, required)
-  - `ref`: Accepts optional git refs such as `refs/tags/{tag}`, `refs/heads/{branch}` or `refs/pull/{pr_number}/head` (string, optional)
+  - `ref`: Accepts optional git refs such as `refs/tags/{tag}`, `refs/heads/{branch}` or `refs/pull/{pr_number}/head` (string, optional). For example, use `refs/pull/123/head` to fetch content from a pull request head.
   - `repo`: Repository name (string, required)
   - `sha`: Accepts optional commit SHA. If specified, it will be used instead of ref (string, optional)
 
