@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	ghErrors "github.com/github/github-mcp-server/pkg/errors"
 	"github.com/github/github-mcp-server/pkg/translations"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/google/go-github/v73/github"
@@ -175,7 +176,7 @@ func AddSubIssue(getClient GetClientFn, t translations.TranslationHelperFunc) (t
 			),
 			mcp.WithNumber("sub_issue_id",
 				mcp.Required(),
-				mcp.Description("The ID of the sub-issue to add"),
+				mcp.Description("The ID of the sub-issue to add. Note: This is NOT the same as the issue number."),
 			),
 			mcp.WithBoolean("replace_parent",
 				mcp.Description("When true, replaces the sub-issue's current parent issue"),
@@ -208,56 +209,31 @@ func AddSubIssue(getClient GetClientFn, t translations.TranslationHelperFunc) (t
 				return nil, fmt.Errorf("failed to get GitHub client: %w", err)
 			}
 
-			// Create the request body
-			requestBody := map[string]interface{}{
-				"sub_issue_id": subIssueID,
-			}
-			if replaceParent {
-				requestBody["replace_parent"] = replaceParent
+			subIssueRequest := github.SubIssueRequest{
+				SubIssueID: int64(subIssueID),
+				ReplaceParent: ToBoolPtr(replaceParent),
 			}
 
-			// Since the go-github library might not have sub-issues support yet,
-			// we'll make a direct HTTP request using the client's HTTP client
-			reqBodyBytes, err := json.Marshal(requestBody)
+			subIssue, resp, err := client.SubIssue.Add(ctx, owner, repo, int64(issueNumber), subIssueRequest)
 			if err != nil {
-				return nil, fmt.Errorf("failed to marshal request body: %w", err)
+				return ghErrors.NewGitHubAPIErrorResponse(ctx,
+					"failed to add sub-issue",
+					resp,
+					err,
+				), nil
 			}
 
-			url := fmt.Sprintf("%srepos/%s/%s/issues/%d/sub_issues",
-				client.BaseURL.String(), owner, repo, issueNumber)
-			req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(reqBodyBytes)))
-			if err != nil {
-				return nil, fmt.Errorf("failed to create request: %w", err)
-			}
-
-			req.Header.Set("Accept", "application/vnd.github+json")
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-
-			// Use the same authentication as the GitHub client
-			httpClient := client.Client()
-			resp, err := httpClient.Do(req)
-			if err != nil {
-				return nil, fmt.Errorf("failed to add sub-issue: %w", err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read response body: %w", err)
-			}
+			defer func() { _ = resp.Body.Close() }() 
 
 			if resp.StatusCode != http.StatusCreated {
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, fmt.Errorf("failed to read response body: %w", err)
+				}
 				return mcp.NewToolResultError(fmt.Sprintf("failed to add sub-issue: %s", string(body))), nil
 			}
 
-			// Parse and re-marshal to ensure consistent formatting
-			var result interface{}
-			if err := json.Unmarshal(body, &result); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-			}
-
-			r, err := json.Marshal(result)
+			r, err := json.Marshal(subIssue)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal response: %w", err)
 			}
