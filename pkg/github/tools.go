@@ -6,7 +6,7 @@ import (
 	"github.com/github/github-mcp-server/pkg/raw"
 	"github.com/github/github-mcp-server/pkg/toolsets"
 	"github.com/github/github-mcp-server/pkg/translations"
-	"github.com/google/go-github/v72/github"
+	"github.com/google/go-github/v73/github"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/shurcooL/githubv4"
 )
@@ -107,6 +107,11 @@ func DefaultToolsetGroup(readOnly bool, getClient GetClientFn, getGQLClient GetG
 			toolsets.NewServerTool(GetSecretScanningAlert(getClient, t)),
 			toolsets.NewServerTool(ListSecretScanningAlerts(getClient, t)),
 		)
+	dependabot := toolsets.NewToolset("dependabot", "Dependabot tools").
+		AddReadTools(
+			toolsets.NewServerTool(GetDependabotAlert(getClient, t)),
+			toolsets.NewServerTool(ListDependabotAlerts(getClient, t)),
+		)
 
 	notifications := toolsets.NewToolset("notifications", "GitHub Notifications related tools").
 		AddReadTools(
@@ -118,6 +123,14 @@ func DefaultToolsetGroup(readOnly bool, getClient GetClientFn, getGQLClient GetG
 			toolsets.NewServerTool(MarkAllNotificationsRead(getClient, t)),
 			toolsets.NewServerTool(ManageNotificationSubscription(getClient, t)),
 			toolsets.NewServerTool(ManageRepositoryNotificationSubscription(getClient, t)),
+		)
+
+	discussions := toolsets.NewToolset("discussions", "GitHub Discussions related tools").
+		AddReadTools(
+			toolsets.NewServerTool(ListDiscussions(getGQLClient, t)),
+			toolsets.NewServerTool(GetDiscussion(getGQLClient, t)),
+			toolsets.NewServerTool(GetDiscussionComments(getGQLClient, t)),
+			toolsets.NewServerTool(ListDiscussionCategories(getGQLClient, t)),
 		)
 
 	actions := toolsets.NewToolset("actions", "GitHub Actions workflows and CI/CD operations").
@@ -158,8 +171,10 @@ func DefaultToolsetGroup(readOnly bool, getClient GetClientFn, getGQLClient GetG
 	tsg.AddToolset(actions)
 	tsg.AddToolset(codeSecurity)
 	tsg.AddToolset(secretProtection)
+	tsg.AddToolset(dependabot)
 	tsg.AddToolset(notifications)
 	tsg.AddToolset(experiments)
+	tsg.AddToolset(discussions)
 
 	return tsg
 }
@@ -182,4 +197,13 @@ func InitDynamicToolset(s *server.MCPServer, tsg *toolsets.ToolsetGroup, t trans
 // ToBoolPtr converts a bool to a *bool pointer.
 func ToBoolPtr(b bool) *bool {
 	return &b
+}
+
+// ToStringPtr converts a string to a *string pointer.
+// Returns nil if the string is empty.
+func ToStringPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

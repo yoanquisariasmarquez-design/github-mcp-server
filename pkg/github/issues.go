@@ -11,7 +11,7 @@ import (
 
 	"github.com/github/github-mcp-server/pkg/translations"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/google/go-github/v72/github"
+	"github.com/google/go-github/v73/github"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/shurcooL/githubv4"
@@ -1055,12 +1055,7 @@ func GetIssueComments(getClient GetClientFn, t translations.TranslationHelperFun
 				mcp.Required(),
 				mcp.Description("Issue number"),
 			),
-			mcp.WithNumber("page",
-				mcp.Description("Page number"),
-			),
-			mcp.WithNumber("per_page",
-				mcp.Description("Number of records per page"),
-			),
+			WithPagination(),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			owner, err := RequiredParam[string](request, "owner")
@@ -1075,19 +1070,15 @@ func GetIssueComments(getClient GetClientFn, t translations.TranslationHelperFun
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			page, err := OptionalIntParamWithDefault(request, "page", 1)
-			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
-			}
-			perPage, err := OptionalIntParamWithDefault(request, "per_page", 30)
+			pagination, err := OptionalPaginationParams(request)
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
 			opts := &github.IssueListCommentsOptions{
 				ListOptions: github.ListOptions{
-					Page:    page,
-					PerPage: perPage,
+					Page:    pagination.page,
+					PerPage: pagination.perPage,
 				},
 			}
 
@@ -1340,7 +1331,7 @@ func AssignCodingAgentPrompt(t translations.TranslationHelperFunc) (tool mcp.Pro
 	return mcp.NewPrompt("AssignCodingAgent",
 			mcp.WithPromptDescription(t("PROMPT_ASSIGN_CODING_AGENT_DESCRIPTION", "Assign GitHub Coding Agent to multiple tasks in a GitHub repository.")),
 			mcp.WithArgument("repo", mcp.ArgumentDescription("The repository to assign tasks in (owner/repo)."), mcp.RequiredArgument()),
-		), func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		), func(_ context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 			repo := request.Params.Arguments["repo"]
 
 			messages := []mcp.PromptMessage{

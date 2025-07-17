@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/google/go-github/v72/github"
+	"github.com/google/go-github/v73/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -260,7 +260,7 @@ func TestGitHubErrorContext(t *testing.T) {
 
 	t.Run("NewGitHubAPIErrorToCtx with nil context does not error", func(t *testing.T) {
 		// Given a nil context
-		var ctx context.Context = nil
+		var ctx context.Context
 
 		// Create a mock GitHub response
 		resp := &github.Response{

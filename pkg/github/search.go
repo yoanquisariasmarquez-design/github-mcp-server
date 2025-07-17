@@ -8,7 +8,7 @@ import (
 
 	ghErrors "github.com/github/github-mcp-server/pkg/errors"
 	"github.com/github/github-mcp-server/pkg/translations"
-	"github.com/google/go-github/v72/github"
+	"github.com/google/go-github/v73/github"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -155,11 +155,13 @@ func SearchCode(getClient GetClientFn, t translations.TranslationHelperFunc) (to
 		}
 }
 
+// MinimalUser is the output type for user and organization search results.
 type MinimalUser struct {
-	Login      string `json:"login"`
-	ID         int64  `json:"id,omitempty"`
-	ProfileURL string `json:"profile_url,omitempty"`
-	AvatarURL  string `json:"avatar_url,omitempty"`
+	Login      string       `json:"login"`
+	ID         int64        `json:"id,omitempty"`
+	ProfileURL string       `json:"profile_url,omitempty"`
+	AvatarURL  string       `json:"avatar_url,omitempty"`
+	Details    *UserDetails `json:"details,omitempty"` // Optional field for additional user details
 }
 
 type MinimalSearchUsersResult struct {
@@ -224,15 +226,11 @@ func userOrOrgHandler(accountType string, getClient GetClientFn) server.ToolHand
 
 		for _, user := range result.Users {
 			if user.Login != nil {
-				mu := MinimalUser{Login: *user.Login}
-				if user.ID != nil {
-					mu.ID = *user.ID
-				}
-				if user.HTMLURL != nil {
-					mu.ProfileURL = *user.HTMLURL
-				}
-				if user.AvatarURL != nil {
-					mu.AvatarURL = *user.AvatarURL
+				mu := MinimalUser{
+					Login:      user.GetLogin(),
+					ID:         user.GetID(),
+					ProfileURL: user.GetHTMLURL(),
+					AvatarURL:  user.GetAvatarURL(),
 				}
 				minimalUsers = append(minimalUsers, mu)
 			}

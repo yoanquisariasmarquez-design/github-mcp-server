@@ -14,7 +14,7 @@ import (
 
 	"github.com/github/github-mcp-server/pkg/raw"
 	"github.com/github/github-mcp-server/pkg/translations"
-	"github.com/google/go-github/v72/github"
+	"github.com/google/go-github/v73/github"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -89,7 +89,7 @@ func RepositoryResourceContentsHandler(getClient GetClientFn, getRawClient raw.G
 		}
 
 		opts := &github.RepositoryContentGetOptions{}
-		rawOpts := &raw.RawContentOpts{}
+		rawOpts := &raw.ContentOpts{}
 
 		sha, ok := request.Params.Arguments["sha"].([]string)
 		if ok && len(sha) > 0 {

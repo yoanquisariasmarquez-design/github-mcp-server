@@ -14,11 +14,12 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-func GetCodeScanningAlert(getClient GetClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
-	return mcp.NewTool("get_code_scanning_alert",
-			mcp.WithDescription(t("TOOL_GET_CODE_SCANNING_ALERT_DESCRIPTION", "Get details of a specific code scanning alert in a GitHub repository.")),
+func GetDependabotAlert(getClient GetClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
+	return mcp.NewTool(
+			"get_dependabot_alert",
+			mcp.WithDescription(t("TOOL_GET_DEPENDABOT_ALERT_DESCRIPTION", "Get details of a specific dependabot alert in a GitHub repository.")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
-				Title:        t("TOOL_GET_CODE_SCANNING_ALERT_USER_TITLE", "Get code scanning alert"),
+				Title:        t("TOOL_GET_DEPENDABOT_ALERT_USER_TITLE", "Get dependabot alert"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("owner",
@@ -53,10 +54,10 @@ func GetCodeScanningAlert(getClient GetClientFn, t translations.TranslationHelpe
 				return nil, fmt.Errorf("failed to get GitHub client: %w", err)
 			}
 
-			alert, resp, err := client.CodeScanning.GetAlert(ctx, owner, repo, int64(alertNumber))
+			alert, resp, err := client.Dependabot.GetRepoAlert(ctx, owner, repo, alertNumber)
 			if err != nil {
 				return ghErrors.NewGitHubAPIErrorResponse(ctx,
-					"failed to get alert",
+					fmt.Sprintf("failed to get alert with number '%d'", alertNumber),
 					resp,
 					err,
 				), nil
@@ -80,11 +81,12 @@ func GetCodeScanningAlert(getClient GetClientFn, t translations.TranslationHelpe
 		}
 }
 
-func ListCodeScanningAlerts(getClient GetClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
-	return mcp.NewTool("list_code_scanning_alerts",
-			mcp.WithDescription(t("TOOL_LIST_CODE_SCANNING_ALERTS_DESCRIPTION", "List code scanning alerts in a GitHub repository.")),
+func ListDependabotAlerts(getClient GetClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
+	return mcp.NewTool(
+			"list_dependabot_alerts",
+			mcp.WithDescription(t("TOOL_LIST_DEPENDABOT_ALERTS_DESCRIPTION", "List dependabot alerts in a GitHub repository.")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
-				Title:        t("TOOL_LIST_CODE_SCANNING_ALERTS_USER_TITLE", "List code scanning alerts"),
+				Title:        t("TOOL_LIST_DEPENDABOT_ALERTS_USER_TITLE", "List dependabot alerts"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("owner",
@@ -96,19 +98,13 @@ func ListCodeScanningAlerts(getClient GetClientFn, t translations.TranslationHel
 				mcp.Description("The name of the repository."),
 			),
 			mcp.WithString("state",
-				mcp.Description("Filter code scanning alerts by state. Defaults to open"),
+				mcp.Description("Filter dependabot alerts by state. Defaults to open"),
 				mcp.DefaultString("open"),
-				mcp.Enum("open", "closed", "dismissed", "fixed"),
-			),
-			mcp.WithString("ref",
-				mcp.Description("The Git reference for the results you want to list."),
+				mcp.Enum("open", "fixed", "dismissed", "auto_dismissed"),
 			),
 			mcp.WithString("severity",
-				mcp.Description("Filter code scanning alerts by severity"),
-				mcp.Enum("critical", "high", "medium", "low", "warning", "note", "error"),
-			),
-			mcp.WithString("tool_name",
-				mcp.Description("The name of the tool used for code scanning."),
+				mcp.Description("Filter dependabot alerts by severity"),
+				mcp.Enum("low", "medium", "high", "critical"),
 			),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -120,10 +116,6 @@ func ListCodeScanningAlerts(getClient GetClientFn, t translations.TranslationHel
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			ref, err := OptionalParam[string](request, "ref")
-			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
-			}
 			state, err := OptionalParam[string](request, "state")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
@@ -132,19 +124,19 @@ func ListCodeScanningAlerts(getClient GetClientFn, t translations.TranslationHel
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			toolName, err := OptionalParam[string](request, "tool_name")
-			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
-			}
 
 			client, err := getClient(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get GitHub client: %w", err)
 			}
-			alerts, resp, err := client.CodeScanning.ListAlertsForRepo(ctx, owner, repo, &github.AlertListOptions{Ref: ref, State: state, Severity: severity, ToolName: toolName})
+
+			alerts, resp, err := client.Dependabot.ListRepoAlerts(ctx, owner, repo, &github.ListAlertsOptions{
+				State:    ToStringPtr(state),
+				Severity: ToStringPtr(severity),
+			})
 			if err != nil {
 				return ghErrors.NewGitHubAPIErrorResponse(ctx,
-					"failed to list alerts",
+					fmt.Sprintf("failed to list alerts for repository '%s/%s'", owner, repo),
 					resp,
 					err,
 				), nil
