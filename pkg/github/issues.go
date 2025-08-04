@@ -1356,7 +1356,8 @@ type ClosingPullRequest struct {
 
 const (
 	// DefaultClosingPRsLimit is the default number of closing PRs to return per issue
-	DefaultClosingPRsLimit = 10
+	// Aligned with GitHub GraphQL API default of 100 items per page
+	DefaultClosingPRsLimit = 100
 )
 
 // FindClosingPullRequests creates a tool to find pull requests that closed specific issues
@@ -1414,11 +1415,11 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 				limitExplicitlySet = true
 				if limitFloat, ok := limitParam.(float64); ok {
 					limit = int(limitFloat)
-					if limit <= 0 || limit > 100 {
-						return mcp.NewToolResultError("limit must be between 1 and 100 inclusive"), nil
+					if limit <= 0 || limit > 250 {
+						return mcp.NewToolResultError("limit must be between 1 and 250 inclusive (GitHub GraphQL API maximum)"), nil
 					}
 				} else {
-					return mcp.NewToolResultError("limit must be a number between 1 and 100"), nil
+					return mcp.NewToolResultError("limit must be a number between 1 and 250 (GitHub GraphQL API maximum)"), nil
 				}
 			}
 
@@ -1427,8 +1428,8 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("last parameter error: %s", err.Error())), nil
 			}
-			if last != 0 && (last <= 0 || last > 100) {
-				return mcp.NewToolResultError("last must be between 1 and 100 inclusive for backward pagination"), nil
+			if last != 0 && (last <= 0 || last > 250) {
+				return mcp.NewToolResultError("last must be between 1 and 250 inclusive for backward pagination (GitHub GraphQL API maximum)"), nil
 			}
 
 			// Parse cursor parameters
