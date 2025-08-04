@@ -174,6 +174,43 @@ func OptionalStringArrayParam(r mcp.CallToolRequest, p string) ([]string, error)
 	}
 }
 
+// OptionalIntArrayParam is a helper function that can be used to fetch a requested parameter from the request.
+// It does the following checks:
+// 1. Checks if the parameter is present in the request, if not, it returns its zero-value
+// 2. If it is present, iterates the elements and checks each is a number that can be converted to int
+func OptionalIntArrayParam(r mcp.CallToolRequest, p string) ([]int, error) {
+	// Check if the parameter is present in the request
+	if _, ok := r.GetArguments()[p]; !ok {
+		return []int{}, nil
+	}
+
+	switch v := r.GetArguments()[p].(type) {
+	case nil:
+		return []int{}, nil
+	case []int:
+		return v, nil
+	case []any:
+		intSlice := make([]int, len(v))
+		for i, v := range v {
+			switch num := v.(type) {
+			case float64:
+				intSlice[i] = int(num)
+			case int:
+				intSlice[i] = num
+			case int32:
+				intSlice[i] = int(num)
+			case int64:
+				intSlice[i] = int(num)
+			default:
+				return []int{}, fmt.Errorf("parameter %s is not of type number, is %T", p, v)
+			}
+		}
+		return intSlice, nil
+	default:
+		return []int{}, fmt.Errorf("parameter %s could not be coerced to []int, is %T", p, r.GetArguments()[p])
+	}
+}
+
 // WithPagination adds REST API pagination parameters to a tool.
 // https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api
 func WithPagination() mcp.ToolOption {

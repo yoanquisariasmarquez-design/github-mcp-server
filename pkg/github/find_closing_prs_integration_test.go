@@ -37,28 +37,43 @@ func TestFindClosingPullRequestsIntegration(t *testing.T) {
 	// Test cases with known GitHub issues that were closed by PRs
 	testCases := []struct {
 		name                   string
-		issues                 []string
+		owner                  string
+		repo                   string
+		issueNumbers           []int
+		issueReferences        []string
 		expectedResults        int
 		expectSomeClosingPRs   bool
 		expectSpecificIssue    string
 		expectSpecificPRNumber int
 	}{
 		{
-			name:                 "Single issue - VS Code well-known closed issue",
-			issues:               []string{"microsoft/vscode#123456"}, // This is a made-up issue for testing
+			name:                 "Single issue using issue_numbers - VS Code well-known closed issue",
+			owner:                "microsoft",
+			repo:                 "vscode",
+			issueNumbers:         []int{123456}, // This is a made-up issue for testing
 			expectedResults:      1,
 			expectSomeClosingPRs: false, // We expect this to not exist or have no closing PRs
 		},
 		{
-			name:                 "Multiple issues with mixed results",
-			issues:               []string{"octocat/Hello-World#1", "microsoft/vscode#999999"},
+			name:                 "Multiple issues using issue_numbers with mixed results",
+			owner:                "microsoft",
+			repo:                 "vscode",
+			issueNumbers:         []int{1, 999999},
 			expectedResults:      2,
 			expectSomeClosingPRs: false, // These are likely non-existent or have no closing PRs
 		},
 		{
-			name:            "Issue from a popular repo - React",
-			issues:          []string{"facebook/react#1"}, // Very first issue in React repo
+			name:            "Issue from a popular repo using issue_numbers - React",
+			owner:           "facebook",
+			repo:            "react",
+			issueNumbers:    []int{1}, // Very first issue in React repo
 			expectedResults: 1,
+		},
+		{
+			name:                 "Cross-repository queries using issue_references",
+			issueReferences:      []string{"octocat/Hello-World#1", "facebook/react#1"},
+			expectedResults:      2,
+			expectSomeClosingPRs: false, // These might have closing PRs
 		},
 	}
 
@@ -68,8 +83,16 @@ func TestFindClosingPullRequestsIntegration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create request arguments
 			args := map[string]interface{}{
-				"issues": tc.issues,
-				"limit":  5,
+				"limit": 5,
+			}
+
+			// Add appropriate parameters based on test case
+			if len(tc.issueNumbers) > 0 {
+				args["owner"] = tc.owner
+				args["repo"] = tc.repo
+				args["issue_numbers"] = tc.issueNumbers
+			} else if len(tc.issueReferences) > 0 {
+				args["issue_references"] = tc.issueReferences
 			}
 
 			// Create mock request
@@ -101,7 +124,7 @@ func TestFindClosingPullRequestsIntegration(t *testing.T) {
 
 						// Parse JSON response
 						var response struct {
-							Results []FindClosingPRsResult `json:"results"`
+							Results []map[string]interface{} `json:"results"`
 						}
 						err := json.Unmarshal([]byte(textResult), &response)
 						require.NoError(t, err, "Failed to parse JSON response")
@@ -110,35 +133,28 @@ func TestFindClosingPullRequestsIntegration(t *testing.T) {
 						assert.Len(t, response.Results, tc.expectedResults, "Expected specific number of results")
 
 						for i, result := range response.Results {
-							t.Logf("Issue %d: %s", i+1, result.Issue)
-							t.Logf("  Owner: %s, Repo: %s, Number: %d", result.Owner, result.Repo, result.IssueNumber)
-							t.Logf("  Total closing PRs: %d", result.TotalCount)
-							t.Logf("  Error: %s", result.Error)
+							t.Logf("Issue %d:", i+1)
+							t.Logf("  Owner: %v, Repo: %v, Number: %v", result["owner"], result["repo"], result["issue_number"])
+							t.Logf("  Total closing PRs: %v", result["total_count"])
 
-							// Verify basic structure
-							assert.NotEmpty(t, result.Issue, "Issue reference should not be empty")
-							assert.NotEmpty(t, result.Owner, "Owner should not be empty")
-							assert.NotEmpty(t, result.Repo, "Repo should not be empty")
-							assert.Greater(t, result.IssueNumber, 0, "Issue number should be positive")
-
-							// Log closing PRs if any
-							for j, pr := range result.ClosingPullRequests {
-								t.Logf("    PR %d: #%d - %s", j+1, pr.Number, pr.Title)
-								t.Logf("      State: %s, Merged: %t", pr.State, pr.Merged)
-								t.Logf("      URL: %s", pr.URL)
+							if errorMsg, hasError := result["error"]; hasError {
+								t.Logf("  Error: %v", errorMsg)
 							}
 
-							// Check for expected specific results
-							if tc.expectSpecificIssue != "" && result.Issue == tc.expectSpecificIssue {
-								if tc.expectSpecificPRNumber > 0 {
-									found := false
-									for _, pr := range result.ClosingPullRequests {
-										if pr.Number == tc.expectSpecificPRNumber {
-											found = true
-											break
-										}
+							// Verify basic structure
+							assert.NotEmpty(t, result["owner"], "Owner should not be empty")
+							assert.NotEmpty(t, result["repo"], "Repo should not be empty")
+							assert.NotNil(t, result["issue_number"], "Issue number should not be nil")
+
+							// Check closing PRs if any
+							if closingPRs, ok := result["closing_pull_requests"].([]interface{}); ok {
+								t.Logf("  Found %d closing PRs", len(closingPRs))
+								for j, pr := range closingPRs {
+									if prMap, ok := pr.(map[string]interface{}); ok {
+										t.Logf("    PR %d: #%v - %v", j+1, prMap["number"], prMap["title"])
+										t.Logf("      State: %v, Merged: %v", prMap["state"], prMap["merged"])
+										t.Logf("      URL: %v", prMap["url"])
 									}
-									assert.True(t, found, "Expected to find specific PR number")
 								}
 							}
 						}

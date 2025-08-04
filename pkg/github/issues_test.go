@@ -2606,28 +2606,26 @@ func TestParseIssueReference(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
-		expected    IssueRef
+		expected    IssueQuery
 		expectError bool
 	}{
 		{
 			name:  "valid issue reference",
 			input: "github/copilot#123",
-			expected: IssueRef{
+			expected: IssueQuery{
 				Owner:       "github",
 				Repo:        "copilot",
 				IssueNumber: 123,
-				OriginalRef: "github/copilot#123",
 			},
 			expectError: false,
 		},
 		{
 			name:  "valid issue reference with org",
 			input: "microsoft/vscode#456",
-			expected: IssueRef{
+			expected: IssueQuery{
 				Owner:       "microsoft",
 				Repo:        "vscode",
 				IssueNumber: 456,
-				OriginalRef: "microsoft/vscode#456",
 			},
 			expectError: false,
 		},
@@ -2684,11 +2682,10 @@ func TestParseIssueReference(t *testing.T) {
 		{
 			name:  "large issue number",
 			input: "github/copilot#999999999",
-			expected: IssueRef{
+			expected: IssueQuery{
 				Owner:       "github",
 				Repo:        "copilot",
 				IssueNumber: 999999999,
-				OriginalRef: "github/copilot#999999999",
 			},
 			expectError: false,
 		},
@@ -2720,10 +2717,6 @@ func TestParseIssueReference(t *testing.T) {
 
 			if result.IssueNumber != tt.expected.IssueNumber {
 				t.Errorf("expected issue number %d, got %d", tt.expected.IssueNumber, result.IssueNumber)
-			}
-
-			if result.OriginalRef != tt.expected.OriginalRef {
-				t.Errorf("expected original ref %q, got %q", tt.expected.OriginalRef, result.OriginalRef)
 			}
 		})
 	}
