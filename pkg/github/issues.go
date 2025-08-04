@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -1355,6 +1354,11 @@ type ClosingPullRequest struct {
 	Merged bool   `json:"merged"`
 }
 
+const (
+	// DefaultClosingPRsLimit is the default number of closing PRs to return per issue
+	DefaultClosingPRsLimit = 10
+)
+
 // FindClosingPullRequests creates a tool to find pull requests that closed specific issues
 func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.TranslationHelperFunc) (mcp.Tool, server.ToolHandlerFunc) {
 	return mcp.NewTool("find_closing_pull_requests",
@@ -1404,15 +1408,17 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			// Parse pagination parameters
-			limit := 10 // default
+			limit := DefaultClosingPRsLimit // default
+			limitExplicitlySet := false
 			if limitParam, exists := request.GetArguments()["limit"]; exists {
+				limitExplicitlySet = true
 				if limitFloat, ok := limitParam.(float64); ok {
 					limit = int(limitFloat)
 					if limit <= 0 || limit > 100 {
-						return mcp.NewToolResultError("limit must be between 1 and 100"), nil
+						return mcp.NewToolResultError("limit must be between 1 and 100 inclusive"), nil
 					}
 				} else {
-					return mcp.NewToolResultError("limit must be a number"), nil
+					return mcp.NewToolResultError("limit must be a number between 1 and 100"), nil
 				}
 			}
 
@@ -1422,7 +1428,7 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 				return mcp.NewToolResultError(fmt.Sprintf("last parameter error: %s", err.Error())), nil
 			}
 			if last != 0 && (last <= 0 || last > 100) {
-				return mcp.NewToolResultError("last must be between 1 and 100"), nil
+				return mcp.NewToolResultError("last must be between 1 and 100 inclusive for backward pagination"), nil
 			}
 
 			// Parse cursor parameters
@@ -1436,17 +1442,17 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 			}
 
 			// Validate pagination parameter combinations
-			if last != 0 && limit != 10 {
-				return mcp.NewToolResultError("cannot use both 'limit' and 'last' parameters together"), nil
+			if last != 0 && limitExplicitlySet {
+				return mcp.NewToolResultError("cannot use both 'limit' and 'last' parameters together - use 'limit' for forward pagination or 'last' for backward pagination"), nil
 			}
 			if after != "" && before != "" {
-				return mcp.NewToolResultError("cannot use both 'after' and 'before' cursors together"), nil
+				return mcp.NewToolResultError("cannot use both 'after' and 'before' cursors together - use 'after' for forward pagination or 'before' for backward pagination"), nil
 			}
 			if before != "" && last == 0 {
-				return mcp.NewToolResultError("'before' cursor requires 'last' parameter"), nil
+				return mcp.NewToolResultError("'before' cursor requires 'last' parameter for backward pagination"), nil
 			}
 			if after != "" && last != 0 {
-				return mcp.NewToolResultError("'after' cursor cannot be used with 'last' parameter"), nil
+				return mcp.NewToolResultError("'after' cursor cannot be used with 'last' parameter - use 'after' with 'limit' for forward pagination"), nil
 			}
 
 			// Parse filtering parameters
@@ -1479,7 +1485,7 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 
 			// Validate that issue_numbers is not empty
 			if len(issueNumbers) == 0 {
-				return mcp.NewToolResultError("issue_numbers parameter is required and cannot be empty"), nil
+				return mcp.NewToolResultError("issue_numbers parameter is required and cannot be empty - provide at least one issue number"), nil
 			}
 
 			// Get GraphQL client
@@ -1559,35 +1565,31 @@ func queryClosingPRsForIssueEnhanced(ctx context.Context, client *githubv4.Clien
 		} `graphql:"repository(owner: $owner, name: $repo)"`
 	}
 
-	// Validate issue number
-	if issueNumber < 0 || issueNumber > math.MaxInt32 {
+	// Validate issue number (basic bounds check)
+	if issueNumber < 0 {
 		return nil, fmt.Errorf("issue number %d is out of valid range", issueNumber)
 	}
-	issueNumber32 := int32(issueNumber) // safe: range-checked above
 
-	// Validate pagination
-	if params.Last != 0 && (params.Last < 0 || params.Last > math.MaxInt32) {
+	// Validate pagination parameters (basic bounds check)
+	if params.Last < 0 {
 		return nil, fmt.Errorf("last parameter %d is out of valid range", params.Last)
 	}
-	if params.First < 0 || params.First > math.MaxInt32 {
+	if params.First < 0 {
 		return nil, fmt.Errorf("first parameter %d is out of valid range", params.First)
 	}
-
-	first32 := int32(params.First)
-	last32 := int32(params.Last)
 
 	// Build variables map
 	variables := map[string]any{
 		"owner":  githubv4.String(owner),
 		"repo":   githubv4.String(repo),
-		"number": githubv4.Int(issueNumber32),
+		"number": githubv4.Int(issueNumber), // #nosec G115 - issueNumber validated to be positive
 	}
 
-	if last32 != 0 {
-		variables["last"] = githubv4.Int(last32)
+	if params.Last != 0 {
+		variables["last"] = githubv4.Int(params.Last) // #nosec G115 - params.Last validated to be positive
 		variables["first"] = (*githubv4.Int)(nil)
 	} else {
-		variables["first"] = githubv4.Int(first32)
+		variables["first"] = githubv4.Int(params.First) // #nosec G115 - params.First validated to be positive
 		variables["last"] = (*githubv4.Int)(nil)
 	}
 

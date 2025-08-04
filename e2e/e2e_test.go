@@ -1724,10 +1724,9 @@ func TestFindClosingPullRequests(t *testing.T) {
 			// Parse the JSON response
 			var response struct {
 				Results []struct {
-					Issue               string `json:"issue"`
 					Owner               string `json:"owner"`
 					Repo                string `json:"repo"`
-					IssueNumber         int    `json:"issueNumber"`
+					IssueNumber         int    `json:"issue_number"`
 					ClosingPullRequests []struct {
 						Number int    `json:"number"`
 						Title  string `json:"title"`
@@ -1750,7 +1749,6 @@ func TestFindClosingPullRequests(t *testing.T) {
 			// Log and verify each result
 			for i, result := range response.Results {
 				t.Logf("Result %d:", i+1)
-				t.Logf("  Issue: %s", result.Issue)
 				t.Logf("  Owner: %s, Repo: %s, Number: %d", result.Owner, result.Repo, result.IssueNumber)
 				t.Logf("  Total closing PRs: %d", result.TotalCount)
 				if result.Error != "" {
@@ -1758,7 +1756,6 @@ func TestFindClosingPullRequests(t *testing.T) {
 				}
 
 				// Verify basic structure
-				assert.NotEmpty(t, result.Issue, "Issue reference should not be empty")
 				assert.NotEmpty(t, result.Owner, "Owner should not be empty")
 				assert.NotEmpty(t, result.Repo, "Repo should not be empty")
 				assert.Greater(t, result.IssueNumber, 0, "Issue number should be positive")
@@ -1778,8 +1775,8 @@ func TestFindClosingPullRequests(t *testing.T) {
 					assert.NotEmpty(t, pr.URL, "PR URL should not be empty")
 				}
 
-				// The actual count of closing PRs should match the returned array length
-				assert.Equal(t, len(result.ClosingPullRequests), result.TotalCount, "ClosingPullRequests length should match TotalCount")
+				// The number of closing PRs in this page should be less than or equal to the total count
+				assert.LessOrEqual(t, len(result.ClosingPullRequests), result.TotalCount, "ClosingPullRequests length should not exceed TotalCount")
 			}
 		})
 	}
@@ -1935,7 +1932,7 @@ func TestFindClosingPullRequestsGraphQLParameters(t *testing.T) {
 					assert.Equal(t, tc.owner, result.Owner, "Owner should match request")
 					assert.Equal(t, tc.repo, result.Repo, "Repo should match request")
 					assert.Contains(t, tc.issueNumbers, result.IssueNumber, "Issue number should be in request")
-					assert.Equal(t, len(result.ClosingPullRequests), result.TotalCount, "TotalCount should match array length")
+					assert.LessOrEqual(t, len(result.ClosingPullRequests), result.TotalCount, "ClosingPullRequests length should not exceed TotalCount")
 
 					// Parameter-specific validations
 					if tc.includeClosedPrs != nil && *tc.includeClosedPrs == false {
