@@ -40,7 +40,6 @@ func TestFindClosingPullRequestsIntegration(t *testing.T) {
 		owner                  string
 		repo                   string
 		issueNumbers           []int
-		issueReferences        []string
 		expectedResults        int
 		expectSomeClosingPRs   bool
 		expectSpecificIssue    string
@@ -69,12 +68,6 @@ func TestFindClosingPullRequestsIntegration(t *testing.T) {
 			issueNumbers:    []int{1}, // Very first issue in React repo
 			expectedResults: 1,
 		},
-		{
-			name:                 "Cross-repository queries using issue_references",
-			issueReferences:      []string{"octocat/Hello-World#1", "facebook/react#1"},
-			expectedResults:      2,
-			expectSomeClosingPRs: false, // These might have closing PRs
-		},
 	}
 
 	ctx := context.Background()
@@ -83,16 +76,10 @@ func TestFindClosingPullRequestsIntegration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create request arguments
 			args := map[string]interface{}{
-				"limit": 5,
-			}
-
-			// Add appropriate parameters based on test case
-			if len(tc.issueNumbers) > 0 {
-				args["owner"] = tc.owner
-				args["repo"] = tc.repo
-				args["issue_numbers"] = tc.issueNumbers
-			} else if len(tc.issueReferences) > 0 {
-				args["issue_references"] = tc.issueReferences
+				"limit":         5,
+				"owner":         tc.owner,
+				"repo":          tc.repo,
+				"issue_numbers": tc.issueNumbers,
 			}
 
 			// Create mock request

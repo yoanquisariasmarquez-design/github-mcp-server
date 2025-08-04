@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -1352,30 +1351,25 @@ type ClosingPullRequest struct {
 // FindClosingPullRequests creates a tool to find pull requests that closed specific issues
 func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.TranslationHelperFunc) (mcp.Tool, server.ToolHandlerFunc) {
 	return mcp.NewTool("find_closing_pull_requests",
-			mcp.WithDescription(t("TOOL_FIND_CLOSING_PULL_REQUESTS_DESCRIPTION", "Find pull requests that closed specific issues using closing references. Supports both single repository queries (owner/repo + issue_numbers array) and cross-repository queries (issue_references array).")),
+			mcp.WithDescription(t("TOOL_FIND_CLOSING_PULL_REQUESTS_DESCRIPTION", "Find pull requests that closed specific issues using closing references within a repository.")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
 				Title:        t("TOOL_FIND_CLOSING_PULL_REQUESTS_USER_TITLE", "Find closing pull requests"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("owner",
-				mcp.Description("The owner of the repository (required if using issue_numbers)"),
+				mcp.Description("The owner of the repository"),
+				mcp.Required(),
 			),
 			mcp.WithString("repo",
-				mcp.Description("The name of the repository (required if using issue_numbers)"),
+				mcp.Description("The name of the repository"),
+				mcp.Required(),
 			),
 			mcp.WithArray("issue_numbers",
 				mcp.Description("Array of issue numbers within the specified repository"),
+				mcp.Required(),
 				mcp.Items(
 					map[string]any{
 						"type": "number",
-					},
-				),
-			),
-			mcp.WithArray("issue_references",
-				mcp.Description("Array of issue references in format 'owner/repo#number' for cross-repository queries"),
-				mcp.Items(
-					map[string]any{
-						"type": "string",
 					},
 				),
 			),
@@ -1397,21 +1391,23 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 				}
 			}
 
-			// Get optional parameters
-			owner, _ := OptionalParam[string](request, "owner")
-			repo, _ := OptionalParam[string](request, "repo")
-			issueNumbers, _ := OptionalIntArrayParam(request, "issue_numbers")
-			issueReferences, _ := OptionalStringArrayParam(request, "issue_references")
+			// Get required parameters
+			owner, err := RequiredParam[string](request, "owner")
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("owner parameter error: %s", err.Error())), nil
+			}
+			repo, err := RequiredParam[string](request, "repo")
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("repo parameter error: %s", err.Error())), nil
+			}
+			issueNumbers, err := OptionalIntArrayParam(request, "issue_numbers")
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("issue_numbers parameter error: %s", err.Error())), nil
+			}
 
-			// Validate input combinations
-			if len(issueNumbers) == 0 && len(issueReferences) == 0 {
-				return mcp.NewToolResultError("either issue_numbers or issue_references must be provided"), nil
-			}
-			if len(issueNumbers) > 0 && len(issueReferences) > 0 {
-				return mcp.NewToolResultError("provide either issue_numbers OR issue_references, not both"), nil
-			}
-			if len(issueNumbers) > 0 && (owner == "" || repo == "") {
-				return mcp.NewToolResultError("owner and repo are required when using issue_numbers"), nil
+			// Validate that issue_numbers is not empty
+			if len(issueNumbers) == 0 {
+				return mcp.NewToolResultError("issue_numbers parameter is required and cannot be empty"), nil
 			}
 
 			// Get GraphQL client
@@ -1420,39 +1416,16 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 				return nil, fmt.Errorf("failed to get GraphQL client: %w", err)
 			}
 
-			var queries []IssueQuery
-
-			// Build queries based on input type
-			if len(issueNumbers) > 0 {
-				// Single repository, multiple issue numbers
-				for _, issueNum := range issueNumbers {
-					queries = append(queries, IssueQuery{
-						Owner:       owner,
-						Repo:        repo,
-						IssueNumber: issueNum,
-					})
-				}
-			} else {
-				// Multiple issue references
-				for _, ref := range issueReferences {
-					parsed, err := parseIssueReference(ref)
-					if err != nil {
-						return mcp.NewToolResultError(fmt.Sprintf("invalid issue reference '%s': %s", ref, err.Error())), nil
-					}
-					queries = append(queries, parsed)
-				}
-			}
-
-			// Process each issue query
+			// Process each issue number
 			var results []map[string]interface{}
-			for _, query := range queries {
-				result, err := queryClosingPRsForIssue(ctx, client, query.Owner, query.Repo, query.IssueNumber, limit)
+			for _, issueNum := range issueNumbers {
+				result, err := queryClosingPRsForIssue(ctx, client, owner, repo, issueNum, limit)
 				if err != nil {
 					// Add error result for this issue
 					results = append(results, map[string]interface{}{
-						"owner":                 query.Owner,
-						"repo":                  query.Repo,
-						"issue_number":          query.IssueNumber,
+						"owner":                 owner,
+						"repo":                  repo,
+						"issue_number":          issueNum,
 						"error":                 err.Error(),
 						"total_count":           0,
 						"closing_pull_requests": []ClosingPullRequest{},
@@ -1474,66 +1447,6 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 
 			return mcp.NewToolResultText(string(responseJSON)), nil
 		}
-}
-
-// IssueQuery represents a query for a specific issue
-type IssueQuery struct {
-	Owner       string
-	Repo        string
-	IssueNumber int
-}
-
-// parseIssueReference parses an issue reference in the format "owner/repo#number"
-func parseIssueReference(ref string) (IssueQuery, error) {
-	if ref == "" {
-		return IssueQuery{}, fmt.Errorf("invalid format, expected 'owner/repo#number'")
-	}
-
-	// Find the '#' separator
-	hashIndex := strings.LastIndex(ref, "#")
-	if hashIndex == -1 || hashIndex == len(ref)-1 {
-		return IssueQuery{}, fmt.Errorf("invalid format, expected 'owner/repo#number'")
-	}
-
-	// Split the repo part and issue number
-	repoPart := ref[:hashIndex]
-	issueNumPart := ref[hashIndex+1:]
-
-	// Check for multiple hash symbols (invalid case)
-	if strings.Count(ref, "#") > 1 {
-		return IssueQuery{}, fmt.Errorf("invalid format, expected 'owner/repo#number'")
-	}
-
-	// Parse issue number
-	issueNum, err := strconv.Atoi(issueNumPart)
-	if err != nil {
-		return IssueQuery{}, fmt.Errorf("invalid issue number: %s", issueNumPart)
-	}
-
-	// Check for negative or zero issue numbers (GitHub issue numbers are positive)
-	if issueNum <= 0 {
-		return IssueQuery{}, fmt.Errorf("invalid issue number: %s", issueNumPart)
-	}
-
-	// Find the '/' separator in repo part
-	slashIndex := strings.Index(repoPart, "/")
-	if slashIndex == -1 || slashIndex == 0 || slashIndex == len(repoPart)-1 {
-		return IssueQuery{}, fmt.Errorf("invalid format, expected 'owner/repo#number'")
-	}
-
-	// Check for multiple slashes in repo part (invalid case like "owner/repo/extra")
-	if strings.Count(repoPart, "/") > 1 {
-		return IssueQuery{}, fmt.Errorf("invalid format, expected 'owner/repo#number'")
-	}
-
-	owner := repoPart[:slashIndex]
-	repo := repoPart[slashIndex+1:]
-
-	return IssueQuery{
-		Owner:       owner,
-		Repo:        repo,
-		IssueNumber: issueNum,
-	}, nil
 }
 
 // queryClosingPRsForIssue queries closing PRs for a single issue

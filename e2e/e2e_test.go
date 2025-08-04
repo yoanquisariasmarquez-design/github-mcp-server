@@ -1636,7 +1636,9 @@ func TestFindClosingPullRequests(t *testing.T) {
 	// Test with well-known GitHub repositories and issues
 	testCases := []struct {
 		name                    string
-		issues                  []interface{}
+		owner                   string
+		repo                    string
+		issueNumbers            []int
 		limit                   int
 		expectError             bool
 		expectedResults         int
@@ -1644,33 +1646,36 @@ func TestFindClosingPullRequests(t *testing.T) {
 	}{
 		{
 			name:            "Single issue test - should handle gracefully even if no closing PRs",
-			issues:          []interface{}{"octocat/Hello-World#1"},
+			owner:           "octocat",
+			repo:            "Hello-World",
+			issueNumbers:    []int{1},
 			limit:           5,
 			expectError:     false,
 			expectedResults: 1,
 		},
 		{
 			name:            "Multiple issues test",
-			issues:          []interface{}{"octocat/Hello-World#1", "github/docs#1"},
+			owner:           "github",
+			repo:            "docs",
+			issueNumbers:    []int{1, 2},
 			limit:           3,
 			expectError:     false,
 			expectedResults: 2,
 		},
 		{
-			name:        "Invalid issue format should return error",
-			issues:      []interface{}{"invalid-format"},
-			expectError: true,
+			name:         "Empty issue_numbers array should return error",
+			owner:        "octocat",
+			repo:         "Hello-World",
+			issueNumbers: []int{},
+			expectError:  true,
 		},
 		{
-			name:        "Empty issues array should return error",
-			issues:      []interface{}{},
-			expectError: true,
-		},
-		{
-			name:        "Limit too high should return error",
-			issues:      []interface{}{"octocat/Hello-World#1"},
-			limit:       150,
-			expectError: true,
+			name:         "Limit too high should return error",
+			owner:        "octocat",
+			repo:         "Hello-World",
+			issueNumbers: []int{1},
+			limit:        150,
+			expectError:  true,
 		},
 	}
 
@@ -1682,14 +1687,16 @@ func TestFindClosingPullRequests(t *testing.T) {
 
 			// Build arguments map
 			args := map[string]any{
-				"issues": tc.issues,
+				"owner":         tc.owner,
+				"repo":          tc.repo,
+				"issue_numbers": tc.issueNumbers,
 			}
 			if tc.limit > 0 {
 				args["limit"] = tc.limit
 			}
 			findClosingPRsRequest.Params.Arguments = args
 
-			t.Logf("Calling find_closing_pull_requests with issues: %v", tc.issues)
+			t.Logf("Calling find_closing_pull_requests with owner: %s, repo: %s, issue_numbers: %v", tc.owner, tc.repo, tc.issueNumbers)
 			resp, err := mcpClient.CallTool(ctx, findClosingPRsRequest)
 
 			if tc.expectError {
