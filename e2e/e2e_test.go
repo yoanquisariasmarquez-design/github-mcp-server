@@ -21,6 +21,7 @@ import (
 	gogithub "github.com/google/go-github/v73/github"
 	mcpClient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1623,4 +1624,156 @@ func TestPullRequestReviewDeletion(t *testing.T) {
 	err = json.Unmarshal([]byte(textContent.Text), &noReviews)
 	require.NoError(t, err, "expected to unmarshal text content successfully")
 	require.Len(t, noReviews, 0, "expected to find no reviews")
+}
+
+func TestFindClosingPullRequests(t *testing.T) {
+	t.Parallel()
+
+	mcpClient := setupMCPClient(t, withToolsets([]string{"issues"}))
+
+	ctx := context.Background()
+
+	// Test with well-known GitHub repositories and issues
+	testCases := []struct {
+		name                    string
+		issues                  []interface{}
+		limit                   int
+		expectError             bool
+		expectedResults         int
+		expectSomeWithClosingPR bool
+	}{
+		{
+			name:            "Single issue test - should handle gracefully even if no closing PRs",
+			issues:          []interface{}{"octocat/Hello-World#1"},
+			limit:           5,
+			expectError:     false,
+			expectedResults: 1,
+		},
+		{
+			name:            "Multiple issues test",
+			issues:          []interface{}{"octocat/Hello-World#1", "github/docs#1"},
+			limit:           3,
+			expectError:     false,
+			expectedResults: 2,
+		},
+		{
+			name:        "Invalid issue format should return error",
+			issues:      []interface{}{"invalid-format"},
+			expectError: true,
+		},
+		{
+			name:        "Empty issues array should return error",
+			issues:      []interface{}{},
+			expectError: true,
+		},
+		{
+			name:        "Limit too high should return error",
+			issues:      []interface{}{"octocat/Hello-World#1"},
+			limit:       150,
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Prepare the request
+			findClosingPRsRequest := mcp.CallToolRequest{}
+			findClosingPRsRequest.Params.Name = "find_closing_pull_requests"
+
+			// Build arguments map
+			args := map[string]any{
+				"issues": tc.issues,
+			}
+			if tc.limit > 0 {
+				args["limit"] = tc.limit
+			}
+			findClosingPRsRequest.Params.Arguments = args
+
+			t.Logf("Calling find_closing_pull_requests with issues: %v", tc.issues)
+			resp, err := mcpClient.CallTool(ctx, findClosingPRsRequest)
+
+			if tc.expectError {
+				// We expect either an error or an error response
+				if err != nil {
+					t.Logf("Expected error occurred: %v", err)
+					return
+				}
+				require.True(t, resp.IsError, "Expected error response")
+				t.Logf("Expected error in response: %+v", resp)
+				return
+			}
+
+			require.NoError(t, err, "expected to call 'find_closing_pull_requests' tool successfully")
+			require.False(t, resp.IsError, fmt.Sprintf("expected result not to be an error: %+v", resp))
+
+			// Verify we got content
+			require.NotEmpty(t, resp.Content, "Expected response content")
+
+			textContent, ok := resp.Content[0].(mcp.TextContent)
+			require.True(t, ok, "expected content to be of type TextContent")
+
+			t.Logf("Response: %s", textContent.Text)
+
+			// Parse the JSON response
+			var response struct {
+				Results []struct {
+					Issue               string `json:"issue"`
+					Owner               string `json:"owner"`
+					Repo                string `json:"repo"`
+					IssueNumber         int    `json:"issueNumber"`
+					ClosingPullRequests []struct {
+						Number int    `json:"number"`
+						Title  string `json:"title"`
+						Body   string `json:"body"`
+						State  string `json:"state"`
+						URL    string `json:"url"`
+						Merged bool   `json:"merged"`
+					} `json:"closingPullRequests"`
+					TotalCount int    `json:"totalCount"`
+					Error      string `json:"error,omitempty"`
+				} `json:"results"`
+			}
+
+			err = json.Unmarshal([]byte(textContent.Text), &response)
+			require.NoError(t, err, "expected to unmarshal response successfully")
+
+			// Verify the response structure
+			require.Len(t, response.Results, tc.expectedResults, "Expected specific number of results")
+
+			// Log and verify each result
+			for i, result := range response.Results {
+				t.Logf("Result %d:", i+1)
+				t.Logf("  Issue: %s", result.Issue)
+				t.Logf("  Owner: %s, Repo: %s, Number: %d", result.Owner, result.Repo, result.IssueNumber)
+				t.Logf("  Total closing PRs: %d", result.TotalCount)
+				if result.Error != "" {
+					t.Logf("  Error: %s", result.Error)
+				}
+
+				// Verify basic structure
+				assert.NotEmpty(t, result.Issue, "Issue reference should not be empty")
+				assert.NotEmpty(t, result.Owner, "Owner should not be empty")
+				assert.NotEmpty(t, result.Repo, "Repo should not be empty")
+				assert.Greater(t, result.IssueNumber, 0, "Issue number should be positive")
+
+				// Log details of any closing PRs found
+				for j, pr := range result.ClosingPullRequests {
+					t.Logf("    Closing PR %d:", j+1)
+					t.Logf("      Number: %d", pr.Number)
+					t.Logf("      Title: %s", pr.Title)
+					t.Logf("      State: %s, Merged: %t", pr.State, pr.Merged)
+					t.Logf("      URL: %s", pr.URL)
+
+					// Verify PR structure
+					assert.Greater(t, pr.Number, 0, "PR number should be positive")
+					assert.NotEmpty(t, pr.Title, "PR title should not be empty")
+					assert.NotEmpty(t, pr.State, "PR state should not be empty")
+					assert.NotEmpty(t, pr.URL, "PR URL should not be empty")
+				}
+
+				// The actual count of closing PRs should match the returned array length
+				assert.Equal(t, len(result.ClosingPullRequests), result.TotalCount, "ClosingPullRequests length should match TotalCount")
+			}
+		})
+	}
 }

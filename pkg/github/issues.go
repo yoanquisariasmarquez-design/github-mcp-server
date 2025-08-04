@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1319,5 +1320,221 @@ func AssignCodingAgentPrompt(t translations.TranslationHelperFunc) (tool mcp.Pro
 			return &mcp.GetPromptResult{
 				Messages: messages,
 			}, nil
+		}
+}
+
+// IssueRef represents a parsed issue reference in owner/repo#number format
+type IssueRef struct {
+	Owner       string
+	Repo        string
+	IssueNumber int
+	OriginalRef string
+}
+
+// parseIssueReference parses an issue reference in the format "owner/repo#number"
+func parseIssueReference(ref string) (IssueRef, error) {
+	// Split by # to separate repo and issue number
+	parts := strings.Split(ref, "#")
+	if len(parts) != 2 {
+		return IssueRef{}, fmt.Errorf("expected format: owner/repo#number, got: %s", ref)
+	}
+
+	// Split by / to separate owner and repo
+	repoParts := strings.Split(parts[0], "/")
+	if len(repoParts) != 2 {
+		return IssueRef{}, fmt.Errorf("expected format: owner/repo#number, got: %s", ref)
+	}
+
+	// Validate that owner and repo are not empty
+	if repoParts[0] == "" || repoParts[1] == "" {
+		return IssueRef{}, fmt.Errorf("owner and repo cannot be empty, got: %s", ref)
+	}
+
+	// Parse issue number
+	issueNumber, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return IssueRef{}, fmt.Errorf("invalid issue number '%s': %v", parts[1], err)
+	}
+
+	if issueNumber <= 0 {
+		return IssueRef{}, fmt.Errorf("issue number must be positive, got: %d", issueNumber)
+	}
+
+	return IssueRef{
+		Owner:       repoParts[0],
+		Repo:        repoParts[1],
+		IssueNumber: issueNumber,
+		OriginalRef: ref,
+	}, nil
+}
+
+// ClosingPRNode represents a pull request that closed an issue
+type ClosingPRNode struct {
+	Number githubv4.Int
+	Title  githubv4.String
+	Body   githubv4.String
+	State  githubv4.String
+	URL    githubv4.String
+	Merged githubv4.Boolean
+}
+
+// ClosingPRsFragment represents the closedByPullRequestsReferences field
+type ClosingPRsFragment struct {
+	TotalCount githubv4.Int
+	Nodes      []ClosingPRNode
+}
+
+// ClosingPullRequest represents a pull request in the response format
+type ClosingPullRequest struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	Body   string `json:"body"`
+	State  string `json:"state"`
+	URL    string `json:"url"`
+	Merged bool   `json:"merged"`
+}
+
+// FindClosingPRsResult represents the result for a single issue
+type FindClosingPRsResult struct {
+	Issue               string               `json:"issue"`
+	Owner               string               `json:"owner"`
+	Repo                string               `json:"repo"`
+	IssueNumber         int                  `json:"issueNumber"`
+	ClosingPullRequests []ClosingPullRequest `json:"closingPullRequests"`
+	TotalCount          int                  `json:"totalCount"`
+	Error               string               `json:"error,omitempty"`
+}
+
+// FindClosingPullRequests creates a tool to find pull requests that closed specific issues
+func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.TranslationHelperFunc) (mcp.Tool, server.ToolHandlerFunc) {
+	return mcp.NewTool("find_closing_pull_requests",
+			mcp.WithDescription(t("TOOL_FIND_CLOSING_PULL_REQUESTS_DESCRIPTION", "Find pull requests that closed specific issues using closing references. Takes a list of issues in owner/repo#number format and returns the PRs that closed them.")),
+			mcp.WithToolAnnotation(mcp.ToolAnnotation{
+				Title:        t("TOOL_FIND_CLOSING_PULL_REQUESTS_USER_TITLE", "Find closing pull requests"),
+				ReadOnlyHint: ToBoolPtr(true),
+			}),
+			mcp.WithArray("issues",
+				mcp.Required(),
+				mcp.Items(map[string]interface{}{
+					"type":        "string",
+					"description": "Issue reference in format owner/repo#number",
+					"pattern":     "^[^/]+/[^/]+#[1-9][0-9]*$",
+				}),
+				mcp.Description("Array of issue references in format owner/repo#number (e.g., ['github/github#123', 'microsoft/vscode#456'])"),
+			),
+			mcp.WithNumber("limit",
+				mcp.Description("Maximum number of closing PRs to return per issue (default: 10, max: 100)"),
+			),
+		),
+		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			// Parse the issues array parameter
+			issuesParam, ok := request.GetArguments()["issues"].([]interface{})
+			if !ok {
+				return mcp.NewToolResultError("issues parameter must be an array of strings"), nil
+			}
+
+			if len(issuesParam) == 0 {
+				return mcp.NewToolResultError("issues array cannot be empty"), nil
+			}
+
+			if len(issuesParam) > 50 {
+				return mcp.NewToolResultError("maximum 50 issues can be processed at once"), nil
+			}
+
+			// Parse limit parameter
+			limit := 10 // default
+			if limitParam, exists := request.GetArguments()["limit"]; exists {
+				if limitFloat, ok := limitParam.(float64); ok {
+					limit = int(limitFloat)
+					if limit <= 0 || limit > 100 {
+						return mcp.NewToolResultError("limit must be between 1 and 100"), nil
+					}
+				} else {
+					return mcp.NewToolResultError("limit must be a number"), nil
+				}
+			}
+
+			// Parse each issue reference
+			var issueRefs []IssueRef
+			for i, issueInterface := range issuesParam {
+				issueStr, ok := issueInterface.(string)
+				if !ok {
+					return mcp.NewToolResultError(fmt.Sprintf("issue at index %d must be a string", i)), nil
+				}
+
+				ref, err := parseIssueReference(issueStr)
+				if err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("invalid issue format at index %d: %v", i, err)), nil
+				}
+				issueRefs = append(issueRefs, ref)
+			}
+
+			// Get GraphQL client
+			client, err := getGQLClient(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get GraphQL client: %w", err)
+			}
+
+			// Process each issue
+			var results []FindClosingPRsResult
+			for _, issue := range issueRefs {
+				result := FindClosingPRsResult{
+					Issue:       issue.OriginalRef,
+					Owner:       issue.Owner,
+					Repo:        issue.Repo,
+					IssueNumber: issue.IssueNumber,
+				}
+
+				// Define the GraphQL query for this specific issue
+				var query struct {
+					Repository struct {
+						Issue struct {
+							ClosedByPullRequestsReferences ClosingPRsFragment `graphql:"closedByPullRequestsReferences(first: $limit)"`
+						} `graphql:"issue(number: $number)"`
+					} `graphql:"repository(owner: $owner, name: $repo)"`
+				}
+
+				variables := map[string]any{
+					"owner":  githubv4.String(issue.Owner),
+					"repo":   githubv4.String(issue.Repo),
+					"number": githubv4.Int(issue.IssueNumber),
+					"limit":  githubv4.Int(limit),
+				}
+
+				err := client.Query(ctx, &query, variables)
+				if err != nil {
+					// Don't fail the entire request for one bad issue, just record the error
+					result.Error = fmt.Sprintf("failed to query issue: %v", err)
+					results = append(results, result)
+					continue
+				}
+
+				// Convert GraphQL response to JSON format
+				result.TotalCount = int(query.Repository.Issue.ClosedByPullRequestsReferences.TotalCount)
+				for _, node := range query.Repository.Issue.ClosedByPullRequestsReferences.Nodes {
+					result.ClosingPullRequests = append(result.ClosingPullRequests, ClosingPullRequest{
+						Number: int(node.Number),
+						Title:  string(node.Title),
+						Body:   string(node.Body),
+						State:  string(node.State),
+						URL:    string(node.URL),
+						Merged: bool(node.Merged),
+					})
+				}
+
+				results = append(results, result)
+			}
+
+			// Return results
+			response := map[string]interface{}{
+				"results": results,
+			}
+
+			responseJSON, err := json.Marshal(response)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal response: %w", err)
+			}
+
+			return mcp.NewToolResultText(string(responseJSON)), nil
 		}
 }
