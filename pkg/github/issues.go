@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -1558,19 +1559,35 @@ func queryClosingPRsForIssueEnhanced(ctx context.Context, client *githubv4.Clien
 		} `graphql:"repository(owner: $owner, name: $repo)"`
 	}
 
-	// Build variables map with conditional inclusion
+	// Validate issue number
+	if issueNumber < 0 || issueNumber > math.MaxInt32 {
+		return nil, fmt.Errorf("issue number %d is out of valid range", issueNumber)
+	}
+	issueNumber32 := int32(issueNumber) // safe: range-checked above
+
+	// Validate pagination
+	if params.Last != 0 && (params.Last < 0 || params.Last > math.MaxInt32) {
+		return nil, fmt.Errorf("last parameter %d is out of valid range", params.Last)
+	}
+	if params.First < 0 || params.First > math.MaxInt32 {
+		return nil, fmt.Errorf("first parameter %d is out of valid range", params.First)
+	}
+
+	first32 := int32(params.First)
+	last32 := int32(params.Last)
+
+	// Build variables map
 	variables := map[string]any{
 		"owner":  githubv4.String(owner),
 		"repo":   githubv4.String(repo),
-		"number": githubv4.Int(issueNumber),
+		"number": githubv4.Int(issueNumber32),
 	}
 
-	// Add pagination parameters conditionally
-	if params.Last != 0 {
-		variables["last"] = githubv4.Int(params.Last)
+	if last32 != 0 {
+		variables["last"] = githubv4.Int(last32)
 		variables["first"] = (*githubv4.Int)(nil)
 	} else {
-		variables["first"] = githubv4.Int(params.First)
+		variables["first"] = githubv4.Int(first32)
 		variables["last"] = (*githubv4.Int)(nil)
 	}
 
