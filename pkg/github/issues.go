@@ -1332,10 +1332,16 @@ type ClosingPRNode struct {
 	Merged githubv4.Boolean
 }
 
-// ClosingPRsFragment represents the closedByPullRequestsReferences field
+// ClosingPRsFragment represents the closedByPullRequestsReferences field with pagination info
 type ClosingPRsFragment struct {
 	TotalCount githubv4.Int
 	Nodes      []ClosingPRNode
+	PageInfo   struct {
+		HasNextPage     githubv4.Boolean
+		HasPreviousPage githubv4.Boolean
+		StartCursor     githubv4.String
+		EndCursor       githubv4.String
+	}
 }
 
 // ClosingPullRequest represents a pull request in the response format
@@ -1376,9 +1382,27 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 			mcp.WithNumber("limit",
 				mcp.Description("Maximum number of closing PRs to return per issue (default: 10, max: 100)"),
 			),
+			mcp.WithBoolean("includeClosedPrs",
+				mcp.Description("Include closed/merged pull requests in results (default: false)"),
+			),
+			mcp.WithBoolean("orderByState",
+				mcp.Description("Order results by pull request state (default: false)"),
+			),
+			mcp.WithBoolean("userLinkedOnly",
+				mcp.Description("Return only manually linked pull requests (default: false)"),
+			),
+			mcp.WithString("after",
+				mcp.Description("Cursor for forward pagination (use with first/limit)"),
+			),
+			mcp.WithString("before",
+				mcp.Description("Cursor for backward pagination (use with last)"),
+			),
+			mcp.WithNumber("last",
+				mcp.Description("Number of results from end for backward pagination (max: 100)"),
+			),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			// Parse limit parameter
+			// Parse pagination parameters
 			limit := 10 // default
 			if limitParam, exists := request.GetArguments()["limit"]; exists {
 				if limitFloat, ok := limitParam.(float64); ok {
@@ -1389,6 +1413,53 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 				} else {
 					return mcp.NewToolResultError("limit must be a number"), nil
 				}
+			}
+
+			// Parse last parameter for backward pagination
+			last, err := OptionalIntParam(request, "last")
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("last parameter error: %s", err.Error())), nil
+			}
+			if last != 0 && (last <= 0 || last > 100) {
+				return mcp.NewToolResultError("last must be between 1 and 100"), nil
+			}
+
+			// Parse cursor parameters
+			after, err := OptionalParam[string](request, "after")
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("after parameter error: %s", err.Error())), nil
+			}
+			before, err := OptionalParam[string](request, "before")
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("before parameter error: %s", err.Error())), nil
+			}
+
+			// Validate pagination parameter combinations
+			if last != 0 && limit != 10 {
+				return mcp.NewToolResultError("cannot use both 'limit' and 'last' parameters together"), nil
+			}
+			if after != "" && before != "" {
+				return mcp.NewToolResultError("cannot use both 'after' and 'before' cursors together"), nil
+			}
+			if before != "" && last == 0 {
+				return mcp.NewToolResultError("'before' cursor requires 'last' parameter"), nil
+			}
+			if after != "" && last != 0 {
+				return mcp.NewToolResultError("'after' cursor cannot be used with 'last' parameter"), nil
+			}
+
+			// Parse filtering parameters
+			includeClosedPrs, err := OptionalParam[bool](request, "includeClosedPrs")
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("includeClosedPrs parameter error: %s", err.Error())), nil
+			}
+			orderByState, err := OptionalParam[bool](request, "orderByState")
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("orderByState parameter error: %s", err.Error())), nil
+			}
+			userLinkedOnly, err := OptionalParam[bool](request, "userLinkedOnly")
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("userLinkedOnly parameter error: %s", err.Error())), nil
 			}
 
 			// Get required parameters
@@ -1416,10 +1487,29 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 				return nil, fmt.Errorf("failed to get GraphQL client: %w", err)
 			}
 
+			// Create pagination parameters struct
+			paginationParams := struct {
+				First            int
+				Last             int
+				After            string
+				Before           string
+				IncludeClosedPrs bool
+				OrderByState     bool
+				UserLinkedOnly   bool
+			}{
+				First:            limit,
+				Last:             last,
+				After:            after,
+				Before:           before,
+				IncludeClosedPrs: includeClosedPrs,
+				OrderByState:     orderByState,
+				UserLinkedOnly:   userLinkedOnly,
+			}
+
 			// Process each issue number
 			var results []map[string]interface{}
 			for _, issueNum := range issueNumbers {
-				result, err := queryClosingPRsForIssue(ctx, client, owner, repo, issueNum, limit)
+				result, err := queryClosingPRsForIssueEnhanced(ctx, client, owner, repo, issueNum, paginationParams)
 				if err != nil {
 					// Add error result for this issue
 					results = append(results, map[string]interface{}{
@@ -1449,23 +1539,57 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 		}
 }
 
-// queryClosingPRsForIssue queries closing PRs for a single issue
-func queryClosingPRsForIssue(ctx context.Context, client *githubv4.Client, owner, repo string, issueNumber, limit int) (map[string]interface{}, error) {
+// queryClosingPRsForIssueEnhanced queries closing PRs for a single issue with enhanced parameters
+func queryClosingPRsForIssueEnhanced(ctx context.Context, client *githubv4.Client, owner, repo string, issueNumber int, params struct {
+	First            int
+	Last             int
+	After            string
+	Before           string
+	IncludeClosedPrs bool
+	OrderByState     bool
+	UserLinkedOnly   bool
+}) (map[string]interface{}, error) {
 	// Define the GraphQL query for this specific issue
 	var query struct {
 		Repository struct {
 			Issue struct {
-				ClosedByPullRequestsReferences ClosingPRsFragment `graphql:"closedByPullRequestsReferences(first: $limit)"`
+				ClosedByPullRequestsReferences ClosingPRsFragment `graphql:"closedByPullRequestsReferences(first: $first, last: $last, after: $after, before: $before, includeClosedPrs: $includeClosedPrs, orderByState: $orderByState, userLinkedOnly: $userLinkedOnly)"`
 			} `graphql:"issue(number: $number)"`
 		} `graphql:"repository(owner: $owner, name: $repo)"`
 	}
 
+	// Build variables map with conditional inclusion
 	variables := map[string]any{
 		"owner":  githubv4.String(owner),
 		"repo":   githubv4.String(repo),
 		"number": githubv4.Int(issueNumber),
-		"limit":  githubv4.Int(limit),
 	}
+
+	// Add pagination parameters conditionally
+	if params.Last != 0 {
+		variables["last"] = githubv4.Int(params.Last)
+		variables["first"] = (*githubv4.Int)(nil)
+	} else {
+		variables["first"] = githubv4.Int(params.First)
+		variables["last"] = (*githubv4.Int)(nil)
+	}
+
+	if params.After != "" {
+		variables["after"] = githubv4.String(params.After)
+	} else {
+		variables["after"] = (*githubv4.String)(nil)
+	}
+
+	if params.Before != "" {
+		variables["before"] = githubv4.String(params.Before)
+	} else {
+		variables["before"] = (*githubv4.String)(nil)
+	}
+
+	// Add filtering parameters
+	variables["includeClosedPrs"] = githubv4.Boolean(params.IncludeClosedPrs)
+	variables["orderByState"] = githubv4.Boolean(params.OrderByState)
+	variables["userLinkedOnly"] = githubv4.Boolean(params.UserLinkedOnly)
 
 	err := client.Query(ctx, &query, variables)
 	if err != nil {
@@ -1485,12 +1609,25 @@ func queryClosingPRsForIssue(ctx context.Context, client *githubv4.Client, owner
 		})
 	}
 
-	// Return results in format consistent with other tools
-	return map[string]interface{}{
+	// Build response with pagination info
+	result := map[string]interface{}{
 		"owner":                 owner,
 		"repo":                  repo,
 		"issue_number":          issueNumber,
 		"total_count":           int(query.Repository.Issue.ClosedByPullRequestsReferences.TotalCount),
 		"closing_pull_requests": closingPullRequests,
-	}, nil
+	}
+
+	// Add pagination information if cursors are being used
+	if params.After != "" || params.Before != "" || params.Last != 0 {
+		pageInfo := query.Repository.Issue.ClosedByPullRequestsReferences.PageInfo
+		result["page_info"] = map[string]interface{}{
+			"has_next_page":     bool(pageInfo.HasNextPage),
+			"has_previous_page": bool(pageInfo.HasPreviousPage),
+			"start_cursor":      string(pageInfo.StartCursor),
+			"end_cursor":        string(pageInfo.EndCursor),
+		}
+	}
+
+	return result, nil
 }
