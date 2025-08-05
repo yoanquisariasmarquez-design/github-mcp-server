@@ -1674,7 +1674,7 @@ func TestFindClosingPullRequests(t *testing.T) {
 			owner:        "octocat",
 			repo:         "Hello-World",
 			issueNumbers: []int{1},
-			limit:        150,
+			limit:        251,
 			expectError:  true,
 		},
 	}
@@ -2167,10 +2167,10 @@ func TestFindClosingPullRequestsGraphQLParameters(t *testing.T) {
 				repo:         "vscode",
 				issueNumbers: []int{1},
 				args: map[string]any{
-					"limit": 150,
+					"limit": 251,
 				},
 				expectError: true,
-				description: "Should reject limit greater than 100",
+				description: "Should reject limit greater than 250",
 			},
 			{
 				name:         "Invalid last range - too high",
@@ -2178,10 +2178,10 @@ func TestFindClosingPullRequestsGraphQLParameters(t *testing.T) {
 				repo:         "vscode",
 				issueNumbers: []int{1},
 				args: map[string]any{
-					"last": 150,
+					"last": 251,
 				},
 				expectError: true,
-				description: "Should reject last greater than 100",
+				description: "Should reject last greater than 250",
 			},
 		}
 

@@ -1386,7 +1386,7 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 				),
 			),
 			mcp.WithNumber("limit",
-				mcp.Description("Maximum number of closing PRs to return per issue (default: 10, max: 100)"),
+				mcp.Description("Maximum number of closing PRs to return per issue (default: 100, max: 250)"),
 			),
 			mcp.WithBoolean("includeClosedPrs",
 				mcp.Description("Include closed/merged pull requests in results (default: false)"),
@@ -1404,7 +1404,7 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 				mcp.Description("Cursor for backward pagination (use with last)"),
 			),
 			mcp.WithNumber("last",
-				mcp.Description("Number of results from end for backward pagination (max: 100)"),
+				mcp.Description("Number of results from end for backward pagination (max: 250)"),
 			),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
