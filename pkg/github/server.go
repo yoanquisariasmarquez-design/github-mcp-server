@@ -202,7 +202,7 @@ func OptionalIntArrayParam(r mcp.CallToolRequest, p string) ([]int, error) {
 			case int64:
 				intSlice[i] = int(num)
 			default:
-				return []int{}, fmt.Errorf("parameter %s is not of type number, is %T", p, v)
+				return []int{}, fmt.Errorf("parameter %s array element at index %d is not of type number, is %T", p, i, v)
 			}
 		}
 		return intSlice, nil
