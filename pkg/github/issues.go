@@ -1358,6 +1358,7 @@ const (
 	// DefaultClosingPRsLimit is the default number of closing PRs to return per issue
 	// Aligned with GitHub GraphQL API default of 100 items per page
 	DefaultClosingPRsLimit = 100
+	MaxGraphQLPageSize     = 250 // Maximum page size for GitHub GraphQL API
 )
 
 // FindClosingPullRequests creates a tool to find pull requests that closed specific issues
@@ -1386,7 +1387,11 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 				),
 			),
 			mcp.WithNumber("limit",
-				mcp.Description("Maximum number of closing PRs to return per issue (default: 100, max: 250)"),
+				mcp.Description(fmt.Sprintf(
+					"Maximum number of closing PRs to return per issue (default: %d, max: %d)",
+					DefaultClosingPRsLimit,
+					MaxGraphQLPageSize,
+				)),
 			),
 			mcp.WithBoolean("includeClosedPrs",
 				mcp.Description("Include closed/merged pull requests in results (default: false)"),
@@ -1404,7 +1409,10 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 				mcp.Description("Cursor for backward pagination (use with last)"),
 			),
 			mcp.WithNumber("last",
-				mcp.Description("Number of results from end for backward pagination (max: 250)"),
+				mcp.Description(fmt.Sprintf(
+					"Number of results from end for backward pagination (max: %d)",
+					MaxGraphQLPageSize,
+				)),
 			),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1415,11 +1423,11 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 				limitExplicitlySet = true
 				if limitFloat, ok := limitParam.(float64); ok {
 					limit = int(limitFloat)
-					if limit <= 0 || limit > 250 {
-						return mcp.NewToolResultError("limit must be between 1 and 250 inclusive (GitHub GraphQL API maximum)"), nil
+					if limit <= 0 || limit > MaxGraphQLPageSize {
+						return mcp.NewToolResultError(fmt.Sprintf("limit must be between 1 and %d inclusive (GitHub GraphQL API maximum)", MaxGraphQLPageSize)), nil
 					}
 				} else {
-					return mcp.NewToolResultError("limit must be a number between 1 and 250 (GitHub GraphQL API maximum)"), nil
+					return mcp.NewToolResultError(fmt.Sprintf("limit must be a number between 1 and %d (GitHub GraphQL API maximum)", MaxGraphQLPageSize)), nil
 				}
 			}
 
@@ -1428,8 +1436,8 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("last parameter error: %s", err.Error())), nil
 			}
-			if last != 0 && (last <= 0 || last > 250) {
-				return mcp.NewToolResultError("last must be between 1 and 250 inclusive for backward pagination (GitHub GraphQL API maximum)"), nil
+			if last != 0 && (last <= 0 || last > MaxGraphQLPageSize) {
+				return mcp.NewToolResultError(fmt.Sprintf("last must be between 1 and %d inclusive for backward pagination (GitHub GraphQL API maximum)", MaxGraphQLPageSize)), nil
 			}
 
 			// Parse cursor parameters
