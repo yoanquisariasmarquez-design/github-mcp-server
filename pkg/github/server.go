@@ -99,6 +99,50 @@ func RequiredInt(r mcp.CallToolRequest, p string) (int, error) {
 	return int(v), nil
 }
 
+// RequiredIntArrayParam is a helper function that can be used to fetch a required integer array parameter from the request.
+// It does the following checks:
+// 1. Checks if the parameter is present in the request
+// 2. Checks if the parameter is an array and each element can be converted to int
+// 3. Checks if the array is not empty
+func RequiredIntArrayParam(r mcp.CallToolRequest, p string) ([]int, error) {
+	// Check if the parameter is present in the request
+	if _, ok := r.GetArguments()[p]; !ok {
+		return nil, fmt.Errorf("missing required parameter: %s", p)
+	}
+
+	switch v := r.GetArguments()[p].(type) {
+	case nil:
+		return nil, fmt.Errorf("missing required parameter: %s", p)
+	case []int:
+		if len(v) == 0 {
+			return nil, fmt.Errorf("parameter %s cannot be empty", p)
+		}
+		return v, nil
+	case []any:
+		if len(v) == 0 {
+			return nil, fmt.Errorf("parameter %s cannot be empty", p)
+		}
+		intSlice := make([]int, len(v))
+		for i, elem := range v {
+			switch num := elem.(type) {
+			case float64:
+				intSlice[i] = int(num)
+			case int:
+				intSlice[i] = num
+			case int32:
+				intSlice[i] = int(num)
+			case int64:
+				intSlice[i] = int(num)
+			default:
+				return nil, fmt.Errorf("parameter %s contains non-numeric value, element %d is %T", p, i, elem)
+			}
+		}
+		return intSlice, nil
+	default:
+		return nil, fmt.Errorf("parameter %s is not an array, is %T", p, r.GetArguments()[p])
+	}
+}
+
 // OptionalParam is a helper function that can be used to fetch a requested parameter from the request.
 // It does the following checks:
 // 1. Checks if the parameter is present in the request, if not, it returns its zero-value

@@ -1487,14 +1487,9 @@ func FindClosingPullRequests(getGQLClient GetGQLClientFn, t translations.Transla
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("repo parameter error: %s", err.Error())), nil
 			}
-			issueNumbers, err := OptionalIntArrayParam(request, "issue_numbers")
+			issueNumbers, err := RequiredIntArrayParam(request, "issue_numbers")
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("issue_numbers parameter error: %s", err.Error())), nil
-			}
-
-			// Validate that issue_numbers is not empty
-			if len(issueNumbers) == 0 {
-				return mcp.NewToolResultError("issue_numbers parameter is required and cannot be empty - provide at least one issue number"), nil
 			}
 
 			// Get GraphQL client
