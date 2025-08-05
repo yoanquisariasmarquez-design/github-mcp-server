@@ -724,7 +724,7 @@ func CreateIssue(getClient GetClientFn, t translations.TranslationHelperFunc) (t
 }
 
 // ListIssues creates a tool to list and filter repository issues
-func ListIssues(getClient GetClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
+func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
 	return mcp.NewTool("list_issues",
 			mcp.WithDescription(t("TOOL_LIST_ISSUES_DESCRIPTION", "List issues in a GitHub repository.")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
@@ -818,30 +818,62 @@ func ListIssues(getClient GetClientFn, t translations.TranslationHelperFunc) (to
 				opts.ListOptions.PerPage = int(perPage)
 			}
 
-			client, err := getClient(ctx)
+			client, err := getGQLClient(ctx)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get GitHub client: %w", err)
-			}
-			issues, resp, err := client.Issues.ListByRepo(ctx, owner, repo, opts)
-			if err != nil {
-				return nil, fmt.Errorf("failed to list issues: %w", err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			if resp.StatusCode != http.StatusOK {
-				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					return nil, fmt.Errorf("failed to read response body: %w", err)
-				}
-				return mcp.NewToolResultError(fmt.Sprintf("failed to list issues: %s", string(body))), nil
+				return mcp.NewToolResultError(fmt.Sprintf("failed to get GitHub GQL client: %v", err)), nil
 			}
 
-			r, err := json.Marshal(issues)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal issues: %w", err)
+			var q struct {
+				Repository struct {
+					DiscussionCategories struct {
+						Nodes []struct {
+							ID   githubv4.ID
+							Name githubv4.String
+						}
+						PageInfo struct {
+							HasNextPage     githubv4.Boolean
+							HasPreviousPage githubv4.Boolean
+							StartCursor     githubv4.String
+							EndCursor       githubv4.String
+						}
+						TotalCount int
+					} `graphql:"discussionCategories(first: $first)"`
+				} `graphql:"repository(owner: $owner, name: $repo)"`
+			}
+			vars := map[string]interface{}{
+				//"owner": githubv4.String(params.Owner),
+				//"repo":  githubv4.String(params.Repo),
+				"first": githubv4.Int(25),
+			}
+			if err := client.Query(ctx, &q, vars); err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			return mcp.NewToolResultText(string(r)), nil
+			var categories []map[string]string
+			for _, c := range q.Repository.DiscussionCategories.Nodes {
+				categories = append(categories, map[string]string{
+					"id":   fmt.Sprint(c.ID),
+					"name": string(c.Name),
+				})
+			}
+
+			// Create response with pagination info
+			response := map[string]interface{}{
+				"categories": categories,
+				"pageInfo": map[string]interface{}{
+					"hasNextPage":     q.Repository.DiscussionCategories.PageInfo.HasNextPage,
+					"hasPreviousPage": q.Repository.DiscussionCategories.PageInfo.HasPreviousPage,
+					"startCursor":     string(q.Repository.DiscussionCategories.PageInfo.StartCursor),
+					"endCursor":       string(q.Repository.DiscussionCategories.PageInfo.EndCursor),
+				},
+				"totalCount": q.Repository.DiscussionCategories.TotalCount,
+			}
+
+			out, err := json.Marshal(response)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal discussion categories: %w", err)
+			}
+			return mcp.NewToolResultText(string(out)), nil
 		}
 }
 
