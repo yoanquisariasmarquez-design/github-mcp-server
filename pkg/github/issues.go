@@ -18,6 +18,34 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
+var ListIssuesQuery struct {
+	Repository struct {
+		Issues struct {
+			Nodes []struct {
+				Number githubv4.Int
+				Title  githubv4.String
+				Body   githubv4.String
+				Author struct {
+					Login githubv4.String
+				}
+				CreatedAt githubv4.DateTime
+				Labels    struct {
+					Nodes []struct {
+						Name githubv4.String
+					}
+				} `graphql:"labels(first: 10)"`
+			}
+			PageInfo struct {
+				HasNextPage     githubv4.Boolean
+				HasPreviousPage githubv4.Boolean
+				StartCursor     githubv4.String
+				EndCursor       githubv4.String
+			}
+			TotalCount int
+		} `graphql:"issues(first: $first, after: $after, states: $states, orderBy: {field: $orderBy, direction: $direction})"`
+	} `graphql:"repository(owner: $owner, name: $repo)"`
+}
+
 // GetIssue creates a tool to get details of a specific issue in a GitHub repository.
 func GetIssue(getClient GetClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
 	return mcp.NewTool("get_issue",
@@ -726,7 +754,7 @@ func CreateIssue(getClient GetClientFn, t translations.TranslationHelperFunc) (t
 // ListIssues creates a tool to list and filter repository issues
 func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
 	return mcp.NewTool("list_issues",
-			mcp.WithDescription(t("TOOL_LIST_ISSUES_DESCRIPTION", "List issues in a GitHub repository.")),
+			mcp.WithDescription(t("TOOL_LIST_ISSUES_DESCRIPTION", "List issues in a GitHub repository. For pagination, use the 'endCursor' from the previous response's 'pageInfo' in the 'after' parameter.")),
 			mcp.WithToolAnnotation(mcp.ToolAnnotation{
 				Title:        t("TOOL_LIST_ISSUES_USER_TITLE", "List issues"),
 				ReadOnlyHint: ToBoolPtr(true),
@@ -740,6 +768,7 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 				mcp.Description("Repository name"),
 			),
 			mcp.WithString("state",
+				mcp.Required(),
 				mcp.Description("Filter by state"),
 				mcp.Enum("OPEN", "CLOSED"),
 			),
@@ -752,17 +781,17 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 				),
 			),
 			mcp.WithString("orderBy",
-				mcp.Description("Order discussions by field. If provided, the 'direction' also needs to be provided."),
+				mcp.Description("Order issues by field. If provided, the 'direction' also needs to be provided."),
 				mcp.Enum("CREATED_AT", "UPDATED_AT"),
 			),
 			mcp.WithString("direction",
-				mcp.Description("Order direction."),
+				mcp.Description("Order direction. If provided, the 'orderBy' also needs to be provided."),
 				mcp.Enum("ASC", "DESC"),
 			),
 			mcp.WithString("since",
 				mcp.Description("Filter by date (ISO 8601 timestamp)"),
 			),
-			WithPagination(),
+			WithCursorPagination(),
 		),
 		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			owner, err := RequiredParam[string](request, "owner")
@@ -775,16 +804,13 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 			}
 
 			// Set optional parameters if provided
-			state, err := OptionalParam[string](request, "state")
+			state, err := RequiredParam[string](request, "state")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			if state == "" {
-				state = "OPEN" // Default to OPEN if not provided
-			}
 
 			// Get labels
-			//labels, err := OptionalStringArrayParam(request, "labels")
+			labels, err := OptionalStringArrayParam(request, "labels")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -793,6 +819,7 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
+			//If orderBy is empty, default to CREATED_AT
 			if orderBy == "" {
 				orderBy = "CREATED_AT"
 			}
@@ -801,6 +828,7 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
+			//If direction is empty, default to DESC
 			if direction == "" {
 				direction = "DESC"
 			}
@@ -809,64 +837,99 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
+
+			var sinceTime time.Time
 			if since != "" {
-				//timestamp, err := parseISOTimestamp(since)
+				sinceTime, err = parseISOTimestamp(since)
 				if err != nil {
 					return mcp.NewToolResultError(fmt.Sprintf("failed to list issues: %s", err.Error())), nil
 				}
-				//since = timestamp
+			}
+			// Get pagination parameters and convert to GraphQL format
+			pagination, err := OptionalCursorPaginationParams(request)
+			if err != nil {
+				return nil, err
 			}
 
-			//if page, ok := request.GetArguments()["page"].(float64); ok {
-			//listOptions.Page = int(page)
-			//}
+			// Check if someone tried to use page-based pagination instead of cursor-based
+			if _, pageProvided := request.GetArguments()["page"]; pageProvided {
+				return mcp.NewToolResultError("This tool uses cursor-based pagination. Use the 'after' parameter with the 'endCursor' value from the previous response instead of 'page'."), nil
+			}
 
-			//if perPage, ok := request.GetArguments()["perPage"].(float64); ok {
-			//.PerPage = int(perPage)
-			//}
+			// Check if pagination parameters were explicitly provided
+			_, perPageProvided := request.GetArguments()["perPage"]
+			paginationExplicit := perPageProvided
+
+			paginationParams, err := pagination.ToGraphQLParams()
+			if err != nil {
+				return nil, err
+			}
+
+			if paginationParams.After == nil {
+				defaultAfter := string("")
+				paginationParams.After = &defaultAfter
+			}
+
+			// Use default of 30 if pagination was not explicitly provided
+			if !paginationExplicit {
+				defaultFirst := int32(DefaultGraphQLPageSize)
+				paginationParams.First = &defaultFirst
+			}
 
 			client, err := getGQLClient(ctx)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("failed to get GitHub GQL client: %v", err)), nil
 			}
 
-			var q struct {
-				Repository struct {
-					Issues struct {
-						Nodes []struct {
-							Number githubv4.Int
-							Title  githubv4.String
-							Body   githubv4.String
-							Author struct {
-								Login githubv4.String
-							}
-							CreatedAt githubv4.DateTime
-							Labels    struct {
-								Nodes []struct {
-									Name githubv4.String
-								}
-							} `graphql:"labels(first: 10)"`
-						}
-					} `graphql:"issues(first: $first, states: $states, orderBy: {field: $orderBy, direction: $direction})"`
-				} `graphql:"repository(owner: $owner, name: $repo)"`
-			}
 			vars := map[string]interface{}{
 				"owner":     githubv4.String(owner),
 				"repo":      githubv4.String(repo),
-				"first":     githubv4.Int(100),
 				"states":    []githubv4.IssueState{githubv4.IssueState(state)},
 				"orderBy":   githubv4.IssueOrderField(orderBy),
 				"direction": githubv4.OrderDirection(direction),
+				"first":     githubv4.Int(*paginationParams.First),
 			}
-			if err := client.Query(ctx, &q, vars); err != nil {
+
+			if paginationParams.After != nil {
+				vars["after"] = githubv4.String(*paginationParams.After)
+			} else {
+				vars["after"] = (*githubv4.String)(nil)
+			}
+
+			if err := client.Query(ctx, &ListIssuesQuery, vars); err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
+			//We must filter based on labels after fetching all issues
 			var issues []map[string]interface{}
-			for _, issue := range q.Repository.Issues.Nodes {
-				var labels []string
+			for _, issue := range ListIssuesQuery.Repository.Issues.Nodes {
+				var issueLabels []string
 				for _, label := range issue.Labels.Nodes {
-					labels = append(labels, string(label.Name))
+					issueLabels = append(issueLabels, string(label.Name))
+				}
+
+				// Filter by since date if specified
+				if !sinceTime.IsZero() && issue.CreatedAt.Time.Before(sinceTime) {
+					continue // Skip issues created before the since date
+				}
+
+				// Filter by labels if specified
+				if len(labels) > 0 {
+					hasMatchingLabel := false
+					for _, requestedLabel := range labels {
+						for _, issueLabel := range issueLabels {
+							if strings.EqualFold(requestedLabel, issueLabel) {
+								hasMatchingLabel = true
+								break
+							}
+						}
+						if hasMatchingLabel {
+							break
+						}
+					}
+					if !hasMatchingLabel {
+						continue // Skip this issue as it doesn't match any requested labels
+					}
 				}
 
 				issues = append(issues, map[string]interface{}{
@@ -875,15 +938,21 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 					"body":      string(issue.Body),
 					"author":    string(issue.Author.Login),
 					"createdAt": issue.CreatedAt.Time,
-					"labels":    labels,
+					"labels":    issueLabels,
 				})
 			}
 
 			// Create response with issues
 			response := map[string]interface{}{
 				"issues": issues,
+				"pageInfo": map[string]interface{}{
+					"hasNextPage":     ListIssuesQuery.Repository.Issues.PageInfo.HasNextPage,
+					"hasPreviousPage": ListIssuesQuery.Repository.Issues.PageInfo.HasPreviousPage,
+					"startCursor":     string(ListIssuesQuery.Repository.Issues.PageInfo.StartCursor),
+					"endCursor":       string(ListIssuesQuery.Repository.Issues.PageInfo.EndCursor),
+				},
+				"totalCount": ListIssuesQuery.Repository.Issues.TotalCount,
 			}
-
 			out, err := json.Marshal(response)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal issues: %w", err)
