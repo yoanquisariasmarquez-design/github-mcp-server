@@ -56,34 +56,60 @@ type IssueQueryFragment struct {
 	TotalCount int
 }
 
-// ListIssuesQuery is the root query structure for fetching issues with optional label filtering.
-type ListIssuesQueryType struct {
-	Repository struct {
-		Issues IssueQueryFragment `graphql:"issues(first: $first, after: $after, labels: $labels, states: $states, orderBy: {field: $orderBy, direction: $direction})"`
-	} `graphql:"repository(owner: $owner, name: $repo)"`
-}
-
 // ListIssuesQueryNoLabels is the query structure for fetching issues without label filtering.
-type ListIssuesQueryNoLabelsType struct {
+type ListIssuesQuery struct {
 	Repository struct {
 		Issues IssueQueryFragment `graphql:"issues(first: $first, after: $after, states: $states, orderBy: {field: $orderBy, direction: $direction})"`
 	} `graphql:"repository(owner: $owner, name: $repo)"`
 }
 
-// Implement the interface for both query types
-func (q *ListIssuesQueryType) GetIssueFragment() IssueQueryFragment {
+// ListIssuesQuery is the root query structure for fetching issues with optional label filtering.
+type ListIssuesQueryTypeWithLabels struct {
+	Repository struct {
+		Issues IssueQueryFragment `graphql:"issues(first: $first, after: $after, labels: $labels, states: $states, orderBy: {field: $orderBy, direction: $direction})"`
+	} `graphql:"repository(owner: $owner, name: $repo)"`
+}
+
+// ListIssuesQueryWithSince is the query structure for fetching issues without label filtering but with since filtering.
+type ListIssuesQueryWithSince struct {
+	Repository struct {
+		Issues IssueQueryFragment `graphql:"issues(first: $first, after: $after, states: $states, orderBy: {field: $orderBy, direction: $direction}, filterBy: {since: $since})"`
+	} `graphql:"repository(owner: $owner, name: $repo)"`
+}
+
+// ListIssuesQueryTypeWithLabelsWithSince is the query structure for fetching issues with both label and since filtering.
+type ListIssuesQueryTypeWithLabelsWithSince struct {
+	Repository struct {
+		Issues IssueQueryFragment `graphql:"issues(first: $first, after: $after, labels: $labels, states: $states, orderBy: {field: $orderBy, direction: $direction}, filterBy: {since: $since})"`
+	} `graphql:"repository(owner: $owner, name: $repo)"`
+}
+
+// Implement the interface for all query types
+func (q *ListIssuesQueryTypeWithLabels) GetIssueFragment() IssueQueryFragment {
 	return q.Repository.Issues
 }
 
-func (q *ListIssuesQueryNoLabelsType) GetIssueFragment() IssueQueryFragment {
+func (q *ListIssuesQuery) GetIssueFragment() IssueQueryFragment {
 	return q.Repository.Issues
 }
 
-func getIssueQueryType(hasLabels bool) any {
-	if hasLabels {
-		return &ListIssuesQueryType{}
+func (q *ListIssuesQueryWithSince) GetIssueFragment() IssueQueryFragment {
+	return q.Repository.Issues
+}
+
+func (q *ListIssuesQueryTypeWithLabelsWithSince) GetIssueFragment() IssueQueryFragment {
+	return q.Repository.Issues
+}
+
+func getIssueQueryType(hasLabels bool, hasSince bool) any {
+	if hasLabels && hasSince {
+		return &ListIssuesQueryTypeWithLabelsWithSince{}
+	} else if hasLabels {
+		return &ListIssuesQueryTypeWithLabels{}
+	} else if hasSince {
+		return &ListIssuesQueryWithSince{}
 	}
-	return &ListIssuesQueryNoLabelsType{}
+	return &ListIssuesQuery{}
 }
 
 func fragmentToIssue(fragment IssueFragment) *github.Issue {
@@ -911,18 +937,20 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 				direction = "DESC"
 			}
 
-			// since, err := OptionalParam[string](request, "since")
-			// if err != nil {
-			// 	return mcp.NewToolResultError(err.Error()), nil
-			// }
+			since, err := OptionalParam[string](request, "since")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 
-			// var sinceTime time.Time
-			// if since != "" {
-			// 	sinceTime, err = parseISOTimestamp(since)
-			// 	if err != nil {
-			// 		return mcp.NewToolResultError(fmt.Sprintf("failed to list issues: %s", err.Error())), nil
-			// 	}
-			// }
+			var sinceTime time.Time
+			var hasSince bool
+			if since != "" {
+				sinceTime, err = parseISOTimestamp(since)
+				if err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("failed to list issues: %s", err.Error())), nil
+				}
+				hasSince = true
+			}
 
 			// Get pagination parameters and convert to GraphQL format
 			pagination, err := OptionalCursorPaginationParams(request)
@@ -982,7 +1010,11 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 				vars["labels"] = labelStrings
 			}
 
-			issueQuery := getIssueQueryType(hasLabels)
+			if hasSince {
+				vars["since"] = githubv4.DateTime{Time: sinceTime}
+			}
+
+			issueQuery := getIssueQueryType(hasLabels, hasSince)
 			if err := client.Query(ctx, issueQuery, vars); err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
