@@ -834,7 +834,6 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 				mcp.Description("Repository name"),
 			),
 			mcp.WithString("state",
-				mcp.Required(),
 				mcp.Description("Filter by state"),
 				mcp.Enum("OPEN", "CLOSED"),
 			),
@@ -870,9 +869,17 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 			}
 
 			// Set optional parameters if provided
-			state, err := RequiredParam[string](request, "state")
+			state, err := OptionalParam[string](request, "state")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
+			}
+
+			//If the state has a value, cast into an array of strings
+			var states []githubv4.IssueState
+			if state != "" {
+				states = append(states, githubv4.IssueState(state))
+			} else {
+				states = []githubv4.IssueState{githubv4.IssueStateOpen, githubv4.IssueStateClosed}
 			}
 
 			// Get labels
@@ -951,7 +958,7 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 			vars := map[string]interface{}{
 				"owner":     githubv4.String(owner),
 				"repo":      githubv4.String(repo),
-				"states":    []githubv4.IssueState{githubv4.IssueState(state)},
+				"states":    states,
 				"orderBy":   githubv4.IssueOrderField(orderBy),
 				"direction": githubv4.OrderDirection(direction),
 				"first":     githubv4.Int(*paginationParams.First),
