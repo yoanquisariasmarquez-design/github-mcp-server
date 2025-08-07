@@ -21,20 +21,7 @@ import (
 var ListIssuesQuery struct {
 	Repository struct {
 		Issues struct {
-			Nodes []struct {
-				Number githubv4.Int
-				Title  githubv4.String
-				Body   githubv4.String
-				Author struct {
-					Login githubv4.String
-				}
-				CreatedAt githubv4.DateTime
-				Labels    struct {
-					Nodes []struct {
-						Name githubv4.String
-					}
-				} `graphql:"labels(first: 10)"`
-			}
+			Nodes    []IssueFragment `graphql:"nodes"`
 			PageInfo struct {
 				HasNextPage     githubv4.Boolean
 				HasPreviousPage githubv4.Boolean
@@ -44,6 +31,54 @@ var ListIssuesQuery struct {
 			TotalCount int
 		} `graphql:"issues(first: $first, after: $after, states: $states, orderBy: {field: $orderBy, direction: $direction})"`
 	} `graphql:"repository(owner: $owner, name: $repo)"`
+}
+
+// NodeFragment represents a fragment of an issue node in the GraphQL API.
+type IssueFragment struct {
+	Number     githubv4.Int
+	Title      githubv4.String
+	Body       githubv4.String
+	State      githubv4.String
+	DatabaseID int64
+
+	Author struct {
+		Login githubv4.String
+	}
+	CreatedAt githubv4.DateTime
+	UpdatedAt githubv4.DateTime
+	Labels    struct {
+		Nodes []struct {
+			Name        githubv4.String
+			Id          githubv4.String
+			Description githubv4.String
+		}
+	} `graphql:"labels(first: 10)"`
+}
+
+func fragmentToIssue(fragment IssueFragment) *github.Issue {
+	// Convert GraphQL labels to GitHub API labels format
+	var labels []*github.Label
+	for _, labelNode := range fragment.Labels.Nodes {
+		labels = append(labels, &github.Label{
+			Name:        github.Ptr(string(labelNode.Name)),
+			NodeID:      github.Ptr(string(labelNode.Id)),
+			Description: github.Ptr(string(labelNode.Description)),
+		})
+	}
+
+	return &github.Issue{
+		Number:    github.Ptr(int(fragment.Number)),
+		Title:     github.Ptr(string(fragment.Title)),
+		CreatedAt: &github.Timestamp{Time: fragment.CreatedAt.Time},
+		UpdatedAt: &github.Timestamp{Time: fragment.UpdatedAt.Time},
+		User: &github.User{
+			Login: github.Ptr(string(fragment.Author.Login)),
+		},
+		State:  github.Ptr(string(fragment.State)),
+		ID:     github.Ptr(fragment.DatabaseID),
+		Body:   github.Ptr(string(fragment.Body)),
+		Labels: labels,
+	}
 }
 
 // GetIssue creates a tool to get details of a specific issue in a GitHub repository.
@@ -865,11 +900,6 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 				return nil, err
 			}
 
-			if paginationParams.After == nil {
-				defaultAfter := string("")
-				paginationParams.After = &defaultAfter
-			}
-
 			// Use default of 30 if pagination was not explicitly provided
 			if !paginationExplicit {
 				defaultFirst := int32(DefaultGraphQLPageSize)
@@ -901,7 +931,7 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 			}
 
 			//We must filter based on labels after fetching all issues
-			var issues []map[string]interface{}
+			var issues []*github.Issue
 			for _, issue := range ListIssuesQuery.Repository.Issues.Nodes {
 				var issueLabels []string
 				for _, label := range issue.Labels.Nodes {
@@ -931,15 +961,7 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 						continue // Skip this issue as it doesn't match any requested labels
 					}
 				}
-
-				issues = append(issues, map[string]interface{}{
-					"number":    int(issue.Number),
-					"title":     string(issue.Title),
-					"body":      string(issue.Body),
-					"author":    string(issue.Author.Login),
-					"createdAt": issue.CreatedAt.Time,
-					"labels":    issueLabels,
-				})
+				issues = append(issues, fragmentToIssue(issue))
 			}
 
 			// Create response with issues
