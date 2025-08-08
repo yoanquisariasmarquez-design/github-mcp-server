@@ -34,7 +34,7 @@ type IssueFragment struct {
 	Labels    struct {
 		Nodes []struct {
 			Name        githubv4.String
-			Id          githubv4.String
+			ID          githubv4.String
 			Description githubv4.String
 		}
 	} `graphql:"labels(first: 10)"`
@@ -102,14 +102,16 @@ func (q *ListIssuesQueryTypeWithLabelsWithSince) GetIssueFragment() IssueQueryFr
 }
 
 func getIssueQueryType(hasLabels bool, hasSince bool) any {
-	if hasLabels && hasSince {
+	switch {
+	case hasLabels && hasSince:
 		return &ListIssuesQueryTypeWithLabelsWithSince{}
-	} else if hasLabels {
+	case hasLabels:
 		return &ListIssuesQueryTypeWithLabels{}
-	} else if hasSince {
+	case hasSince:
 		return &ListIssuesQueryWithSince{}
+	default:
+		return &ListIssuesQuery{}
 	}
-	return &ListIssuesQuery{}
 }
 
 func fragmentToIssue(fragment IssueFragment) *github.Issue {
@@ -118,7 +120,7 @@ func fragmentToIssue(fragment IssueFragment) *github.Issue {
 	for _, labelNode := range fragment.Labels.Nodes {
 		foundLabels = append(foundLabels, &github.Label{
 			Name:        github.Ptr(string(labelNode.Name)),
-			NodeID:      github.Ptr(string(labelNode.Id)),
+			NodeID:      github.Ptr(string(labelNode.ID)),
 			Description: github.Ptr(string(labelNode.Description)),
 		})
 	}
@@ -900,7 +902,7 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			//If the state has a value, cast into an array of strings
+			// If the state has a value, cast into an array of strings
 			var states []githubv4.IssueState
 			if state != "" {
 				states = append(states, githubv4.IssueState(state))
@@ -914,7 +916,7 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			//If labels is empty, default to nil for gql query
+			// If labels is empty, default to nil for gql query
 			if len(labels) == 0 {
 				labels = nil
 			}
@@ -923,7 +925,7 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			//If orderBy is empty, default to CREATED_AT
+			// If orderBy is empty, default to CREATED_AT
 			if orderBy == "" {
 				orderBy = "CREATED_AT"
 			}
@@ -932,7 +934,7 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			//If direction is empty, default to DESC
+			// If direction is empty, default to DESC
 			if direction == "" {
 				direction = "DESC"
 			}
