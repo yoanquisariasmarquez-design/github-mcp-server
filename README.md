@@ -547,7 +547,7 @@ The following sets of tools are available (all are on by default):
   - `perPage`: Results per page for pagination (min 1, max 100) (number, optional)
   - `repo`: Repository name (string, required)
   - `since`: Filter by date (ISO 8601 timestamp) (string, optional)
-  - `state`: Filter by state (string, optional)
+  - `state`: Filter by state, by default both open and closed issues are returned when not provided (string, optional)
 
 - **list_sub_issues** - List sub-issues
   - `issue_number`: Issue number (number, required)
