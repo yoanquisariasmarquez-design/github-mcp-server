@@ -862,7 +862,7 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 				mcp.Description("Repository name"),
 			),
 			mcp.WithString("state",
-				mcp.Description("Filter by state"),
+				mcp.Description("Filter by state, by default both open and closed issues are returned when not provided"),
 				mcp.Enum("OPEN", "CLOSED"),
 			),
 			mcp.WithArray("labels",
