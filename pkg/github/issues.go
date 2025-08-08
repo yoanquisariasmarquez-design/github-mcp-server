@@ -56,14 +56,14 @@ type IssueQueryFragment struct {
 	TotalCount int
 }
 
-// ListIssuesQueryNoLabels is the query structure for fetching issues without label filtering.
+// ListIssuesQuery is the root query structure for fetching issues with optional label filtering.
 type ListIssuesQuery struct {
 	Repository struct {
 		Issues IssueQueryFragment `graphql:"issues(first: $first, after: $after, states: $states, orderBy: {field: $orderBy, direction: $direction})"`
 	} `graphql:"repository(owner: $owner, name: $repo)"`
 }
 
-// ListIssuesQuery is the root query structure for fetching issues with optional label filtering.
+// ListIssuesQueryTypeWithLabels is the query structure for fetching issues with optional label filtering.
 type ListIssuesQueryTypeWithLabels struct {
 	Repository struct {
 		Issues IssueQueryFragment `graphql:"issues(first: $first, after: $after, labels: $labels, states: $states, orderBy: {field: $orderBy, direction: $direction})"`
