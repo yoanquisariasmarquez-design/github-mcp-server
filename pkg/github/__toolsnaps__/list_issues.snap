@@ -52,7 +52,7 @@
         "type": "string"
       },
       "state": {
-        "description": "Filter by state",
+        "description": "Filter by state, by default both open and closed issues are returned when not provided",
         "enum": [
           "OPEN",
           "CLOSED"
