@@ -37,7 +37,7 @@ type IssueFragment struct {
 			ID          githubv4.String
 			Description githubv4.String
 		}
-	} `graphql:"labels(first: 10)"`
+	} `graphql:"labels(first: 100)"`
 }
 
 // Common interface for all issue query types
@@ -916,23 +916,20 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			// If labels is empty, default to nil for gql query
-			if len(labels) == 0 {
-				labels = nil
-			}
-
 			orderBy, err := OptionalParam[string](request, "orderBy")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
-			}
-			// If orderBy is empty, default to CREATED_AT
-			if orderBy == "" {
-				orderBy = "CREATED_AT"
 			}
 
 			direction, err := OptionalParam[string](request, "direction")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
+			}
+
+			// These variables are required for the GraphQL query to be set by default
+			// If orderBy is empty, default to CREATED_AT
+			if orderBy == "" {
+				orderBy = "CREATED_AT"
 			}
 			// If direction is empty, default to DESC
 			if direction == "" {
@@ -944,6 +941,7 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
+			// There are two optional parameters: since and labels.
 			var sinceTime time.Time
 			var hasSince bool
 			if since != "" {
@@ -953,6 +951,7 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 				}
 				hasSince = true
 			}
+			hasLabels := len(labels) > 0
 
 			// Get pagination parameters and convert to GraphQL format
 			pagination, err := OptionalCursorPaginationParams(request)
@@ -997,12 +996,11 @@ func ListIssues(getGQLClient GetGQLClientFn, t translations.TranslationHelperFun
 			if paginationParams.After != nil {
 				vars["after"] = githubv4.String(*paginationParams.After)
 			} else {
+				// Used within query, therefore must be set to nil and provided as $after
 				vars["after"] = (*githubv4.String)(nil)
 			}
 
-			// Choose the appropriate query based on whether labels are specified
-			hasLabels := len(labels) > 0
-
+			// Ensure optional parameters are set
 			if hasLabels {
 				// Use query with labels filtering - convert string labels to githubv4.String slice
 				labelStrings := make([]githubv4.String, len(labels))
