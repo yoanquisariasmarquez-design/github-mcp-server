@@ -754,11 +754,6 @@ func downloadLogContent(logURL string, tailLines int) (string, int, *http.Respon
 		return "", 0, httpResp, fmt.Errorf("failed to download logs: HTTP %d", httpResp.StatusCode)
 	}
 
-	// content, err := io.ReadAll(httpResp.Body)
-	// if err != nil {
-	// 	return "", 0, httpResp, fmt.Errorf("failed to read log content: %w", err)
-	// }
-
 	if tailLines <= 0 {
 		tailLines = 1000
 	}
@@ -774,7 +769,7 @@ func downloadLogContent(logURL string, tailLines int) (string, int, *http.Respon
 		lines = append(lines, line)
 
 		if len(lines) > tailLines {
-			lines = lines[len(lines)-tailLines:]
+			lines = lines[1:]
 		}
 	}
 
