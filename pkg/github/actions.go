@@ -744,7 +744,7 @@ func getJobLogData(ctx context.Context, client *github.Client, owner, repo strin
 
 // downloadLogContent downloads the actual log content from a GitHub logs URL
 func downloadLogContent(logURL string, tailLines int) (string, int, *http.Response, error) {
-	httpResp, err := http.Get(logURL) //nolint:gosec // URLs are provided by GitHub API and are safe
+	httpResp, err := http.Get(logURL) //nolint:gosec
 	if err != nil {
 		return "", 0, httpResp, fmt.Errorf("failed to download logs: %w", err)
 	}
@@ -758,27 +758,35 @@ func downloadLogContent(logURL string, tailLines int) (string, int, *http.Respon
 		tailLines = 1000
 	}
 
-	lines := make([]string, 0, tailLines)
-	scanner := bufio.NewScanner(httpResp.Body)
+	const maxMemoryBytes = 1024 * 1024
+	var lines []string
+	var currentMemoryUsage int
+	totalLines := 0
 
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
+	scanner := bufio.NewScanner(httpResp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		lines = append(lines, line)
+		totalLines++
+		lineSize := len(line) + 1
 
-		if len(lines) > tailLines {
+		// Remove old lines if we exceed memory limit or line count limit
+		for (currentMemoryUsage+lineSize > maxMemoryBytes || len(lines) >= tailLines) && len(lines) > 0 {
+			removedLineSize := len(lines[0]) + 1
+			currentMemoryUsage -= removedLineSize
 			lines = lines[1:]
 		}
+
+		lines = append(lines, line)
+		currentMemoryUsage += lineSize
 	}
 
 	if err := scanner.Err(); err != nil {
 		return "", 0, httpResp, fmt.Errorf("failed to read log content: %w", err)
 	}
 
-	content := strings.Join(lines, "\n")
-	return content, len(lines), httpResp, nil
+	return strings.Join(lines, "\n"), totalLines, httpResp, nil
 }
 
 // RerunWorkflowRun creates a tool to re-run an entire workflow run
