@@ -781,26 +781,6 @@ func downloadLogContent(logURL string, tailLines int) (string, int, *http.Respon
 	return content, len(lines), httpResp, nil
 }
 
-// trimContent trims the content to a maximum length and returns the trimmed content and an original length
-func trimContent(content string, tailLines int) (string, int) {
-	// Truncate to tail_lines if specified
-	lineCount := 0
-	if tailLines > 0 {
-
-		// Count backwards to find the nth newline from the end and a total number of lines
-		for i := len(content) - 1; i >= 0 && lineCount < tailLines; i-- {
-			if content[i] == '\n' {
-				lineCount++
-				// If we have reached the tailLines, trim the content
-				if lineCount == tailLines {
-					content = content[i+1:]
-				}
-			}
-		}
-	}
-	return content, lineCount
-}
-
 // RerunWorkflowRun creates a tool to re-run an entire workflow run
 func RerunWorkflowRun(getClient GetClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
 	return mcp.NewTool("rerun_workflow_run",
