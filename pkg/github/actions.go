@@ -1,10 +1,10 @@
 package github
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -754,16 +754,36 @@ func downloadLogContent(logURL string, tailLines int) (string, int, *http.Respon
 		return "", 0, httpResp, fmt.Errorf("failed to download logs: HTTP %d", httpResp.StatusCode)
 	}
 
-	content, err := io.ReadAll(httpResp.Body)
-	if err != nil {
+	// content, err := io.ReadAll(httpResp.Body)
+	// if err != nil {
+	// 	return "", 0, httpResp, fmt.Errorf("failed to read log content: %w", err)
+	// }
+
+	if tailLines <= 0 {
+		tailLines = 1000
+	}
+
+	lines := make([]string, 0, tailLines)
+	scanner := bufio.NewScanner(httpResp.Body)
+
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		lines = append(lines, line)
+
+		if len(lines) > tailLines {
+			lines = lines[len(lines)-tailLines:]
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
 		return "", 0, httpResp, fmt.Errorf("failed to read log content: %w", err)
 	}
 
-	// Clean up and format the log content for better readability
-	logContent := strings.TrimSpace(string(content))
-
-	trimmedContent, lineCount := trimContent(logContent, tailLines)
-	return trimmedContent, lineCount, httpResp, nil
+	content := strings.Join(lines, "\n")
+	return content, len(lines), httpResp, nil
 }
 
 // trimContent trims the content to a maximum length and returns the trimmed content and an original length
