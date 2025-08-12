@@ -11,6 +11,7 @@
         "type": "string"
       },
       "path": {
+        "default": "/",
         "description": "Path to file/directory (directories must end with a slash '/')",
         "type": "string"
       },
@@ -23,14 +24,13 @@
         "type": "string"
       },
       "sha": {
-        "description": "Accepts optional git sha, if sha is specified it will be used instead of ref",
+        "description": "Accepts optional commit SHA. If specified, it will be used instead of ref",
         "type": "string"
       }
     },
     "required": [
       "owner",
-      "repo",
-      "path"
+      "repo"
     ],
     "type": "object"
   },

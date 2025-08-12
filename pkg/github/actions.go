@@ -11,7 +11,7 @@ import (
 
 	ghErrors "github.com/github/github-mcp-server/pkg/errors"
 	"github.com/github/github-mcp-server/pkg/translations"
-	"github.com/google/go-github/v72/github"
+	"github.com/google/go-github/v74/github"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -62,8 +62,8 @@ func ListWorkflows(getClient GetClientFn, t translations.TranslationHelperFunc) 
 
 			// Set up list options
 			opts := &github.ListOptions{
-				PerPage: pagination.perPage,
-				Page:    pagination.page,
+				PerPage: pagination.PerPage,
+				Page:    pagination.Page,
 			}
 
 			workflows, resp, err := client.Actions.ListWorkflows(ctx, owner, repo, opts)
@@ -200,8 +200,8 @@ func ListWorkflowRuns(getClient GetClientFn, t translations.TranslationHelperFun
 				Event:  event,
 				Status: status,
 				ListOptions: github.ListOptions{
-					PerPage: pagination.perPage,
-					Page:    pagination.page,
+					PerPage: pagination.PerPage,
+					Page:    pagination.Page,
 				},
 			}
 
@@ -503,8 +503,8 @@ func ListWorkflowJobs(getClient GetClientFn, t translations.TranslationHelperFun
 			opts := &github.ListWorkflowJobsOptions{
 				Filter: filter,
 				ListOptions: github.ListOptions{
-					PerPage: pagination.perPage,
-					Page:    pagination.page,
+					PerPage: pagination.PerPage,
+					Page:    pagination.Page,
 				},
 			}
 
@@ -955,7 +955,9 @@ func CancelWorkflowRun(getClient GetClientFn, t translations.TranslationHelperFu
 
 			resp, err := client.Actions.CancelWorkflowRunByID(ctx, owner, repo, runID)
 			if err != nil {
-				return ghErrors.NewGitHubAPIErrorResponse(ctx, "failed to cancel workflow run", resp, err), nil
+				if _, ok := err.(*github.AcceptedError); !ok {
+					return ghErrors.NewGitHubAPIErrorResponse(ctx, "failed to cancel workflow run", resp, err), nil
+				}
 			}
 			defer func() { _ = resp.Body.Close() }()
 
@@ -1025,8 +1027,8 @@ func ListWorkflowRunArtifacts(getClient GetClientFn, t translations.TranslationH
 
 			// Set up list options
 			opts := &github.ListOptions{
-				PerPage: pagination.perPage,
-				Page:    pagination.page,
+				PerPage: pagination.PerPage,
+				Page:    pagination.Page,
 			}
 
 			artifacts, resp, err := client.Actions.ListWorkflowRunArtifacts(ctx, owner, repo, runID, opts)

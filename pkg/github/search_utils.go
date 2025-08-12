@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/google/go-github/v72/github"
+	"github.com/google/go-github/v74/github"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -56,8 +56,8 @@ func searchHandler(
 		Sort:  sort,
 		Order: order,
 		ListOptions: github.ListOptions{
-			Page:    pagination.page,
-			PerPage: pagination.perPage,
+			Page:    pagination.Page,
+			PerPage: pagination.PerPage,
 		},
 	}
 

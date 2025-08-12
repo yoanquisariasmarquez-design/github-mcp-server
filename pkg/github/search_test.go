@@ -8,7 +8,7 @@ import (
 
 	"github.com/github/github-mcp-server/internal/toolsnaps"
 	"github.com/github/github-mcp-server/pkg/translations"
-	"github.com/google/go-github/v72/github"
+	"github.com/google/go-github/v74/github"
 	"github.com/migueleliasweb/go-github-mock/src/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -173,12 +173,12 @@ func Test_SearchCode(t *testing.T) {
 
 	assert.Equal(t, "search_code", tool.Name)
 	assert.NotEmpty(t, tool.Description)
-	assert.Contains(t, tool.InputSchema.Properties, "q")
+	assert.Contains(t, tool.InputSchema.Properties, "query")
 	assert.Contains(t, tool.InputSchema.Properties, "sort")
 	assert.Contains(t, tool.InputSchema.Properties, "order")
 	assert.Contains(t, tool.InputSchema.Properties, "perPage")
 	assert.Contains(t, tool.InputSchema.Properties, "page")
-	assert.ElementsMatch(t, tool.InputSchema.Required, []string{"q"})
+	assert.ElementsMatch(t, tool.InputSchema.Required, []string{"query"})
 
 	// Setup mock search results
 	mockSearchResult := &github.CodeSearchResult{
@@ -227,7 +227,7 @@ func Test_SearchCode(t *testing.T) {
 				),
 			),
 			requestArgs: map[string]interface{}{
-				"q":       "fmt.Println language:go",
+				"query":   "fmt.Println language:go",
 				"sort":    "indexed",
 				"order":   "desc",
 				"page":    float64(1),
@@ -251,7 +251,7 @@ func Test_SearchCode(t *testing.T) {
 				),
 			),
 			requestArgs: map[string]interface{}{
-				"q": "fmt.Println language:go",
+				"query": "fmt.Println language:go",
 			},
 			expectError:    false,
 			expectedResult: mockSearchResult,
@@ -268,7 +268,7 @@ func Test_SearchCode(t *testing.T) {
 				),
 			),
 			requestArgs: map[string]interface{}{
-				"q": "invalid:query",
+				"query": "invalid:query",
 			},
 			expectError:    true,
 			expectedErrMsg: "failed to search code",
