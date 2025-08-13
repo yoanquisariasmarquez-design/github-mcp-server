@@ -1139,7 +1139,7 @@ func Test_GetJobLogs_WithContentReturnAndTailLines(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, float64(123), response["job_id"])
-	assert.Equal(t, float64(1), response["original_length"])
+	assert.Equal(t, float64(3), response["original_length"])
 	assert.Equal(t, expectedLogContent, response["logs_content"])
 	assert.Equal(t, "Job logs content retrieved successfully", response["message"])
 	assert.NotContains(t, response, "logs_url") // Should not have URL when returning content
