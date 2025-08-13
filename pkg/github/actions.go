@@ -758,7 +758,7 @@ func downloadLogContent(logURL string, tailLines int) (string, int, *http.Respon
 		tailLines = 1000
 	}
 
-	const maxMemoryBytes = 1024 * 1024
+	const maxMemoryBytes = 5 * 1024 * 1024
 	var lines []string
 	totalLines := 0
 
