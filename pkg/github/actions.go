@@ -758,10 +758,17 @@ func downloadLogContent(logURL string, tailLines int) (string, int, *http.Respon
 		tailLines = 1000
 	}
 
-	const maxMemoryBytes = 1024 * 1024 // 1MB memory limit
+	const maxMemoryBytes = 1024 * 1024
 	var lines []string
-	var currentMemoryUsage int
 	totalLines := 0
+
+	calculateMemoryUsage := func() int {
+		total := 0
+		for _, line := range lines {
+			total += len(line) + 1
+		}
+		return total
+	}
 
 	scanner := bufio.NewScanner(httpResp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -769,18 +776,16 @@ func downloadLogContent(logURL string, tailLines int) (string, int, *http.Respon
 	for scanner.Scan() {
 		line := scanner.Text()
 		totalLines++
-		lineSize := len(line) + 1 // +1 for newline character
+		lineSize := len(line) + 1
 
+		currentMemoryUsage := calculateMemoryUsage()
 		if currentMemoryUsage+lineSize > maxMemoryBytes {
-			for currentMemoryUsage+lineSize > maxMemoryBytes && len(lines) > 0 {
-				removedLineSize := len(lines[0]) + 1
-				currentMemoryUsage -= removedLineSize
+			for calculateMemoryUsage()+lineSize > maxMemoryBytes && len(lines) > 0 {
 				lines = lines[1:]
 			}
 		}
 
 		lines = append(lines, line)
-		currentMemoryUsage += lineSize
 	}
 
 	if err := scanner.Err(); err != nil {
