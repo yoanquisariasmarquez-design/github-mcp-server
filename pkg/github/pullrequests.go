@@ -8,7 +8,7 @@ import (
 	"net/http"
 
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/google/go-github/v73/github"
+	"github.com/google/go-github/v74/github"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/shurcooL/githubv4"
@@ -691,10 +691,10 @@ func SearchPullRequests(getClient GetClientFn, t translations.TranslationHelperF
 				mcp.Description("Search query using GitHub pull request search syntax"),
 			),
 			mcp.WithString("owner",
-				mcp.Description("Optional repository owner. If provided with repo, only notifications for this repository are listed."),
+				mcp.Description("Optional repository owner. If provided with repo, only pull requests for this repository are listed."),
 			),
 			mcp.WithString("repo",
-				mcp.Description("Optional repository name. If provided with owner, only notifications for this repository are listed."),
+				mcp.Description("Optional repository name. If provided with owner, only pull requests for this repository are listed."),
 			),
 			mcp.WithString("sort",
 				mcp.Description("Sort field by number of matches of categories, defaults to best match"),

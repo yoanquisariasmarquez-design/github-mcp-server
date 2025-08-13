@@ -8,7 +8,7 @@ import (
 
 	ghErrors "github.com/github/github-mcp-server/pkg/errors"
 	"github.com/github/github-mcp-server/pkg/translations"
-	"github.com/google/go-github/v73/github"
+	"github.com/google/go-github/v74/github"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -204,7 +204,10 @@ func userOrOrgHandler(accountType string, getClient GetClientFn) server.ToolHand
 			return nil, fmt.Errorf("failed to get GitHub client: %w", err)
 		}
 
-		searchQuery := "type:" + accountType + " " + query
+		searchQuery := query
+		if !hasTypeFilter(query) {
+			searchQuery = "type:" + accountType + " " + query
+		}
 		result, resp, err := client.Search.Users(ctx, searchQuery, opts)
 		if err != nil {
 			return ghErrors.NewGitHubAPIErrorResponse(ctx,
