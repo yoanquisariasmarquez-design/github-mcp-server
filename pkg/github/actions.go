@@ -758,7 +758,7 @@ func downloadLogContent(logURL string, tailLines int) (string, int, *http.Respon
 		tailLines = 1000
 	}
 
-	const maxMemoryBytes = 1024 * 1024
+	const maxMemoryBytes = 1024 * 1024 // 1MB memory limit
 	var lines []string
 	var currentMemoryUsage int
 	totalLines := 0
@@ -769,13 +769,14 @@ func downloadLogContent(logURL string, tailLines int) (string, int, *http.Respon
 	for scanner.Scan() {
 		line := scanner.Text()
 		totalLines++
-		lineSize := len(line) + 1
+		lineSize := len(line) + 1 // +1 for newline character
 
-		// Remove old lines if we exceed memory limit or line count limit
-		for (currentMemoryUsage+lineSize > maxMemoryBytes || len(lines) >= tailLines) && len(lines) > 0 {
-			removedLineSize := len(lines[0]) + 1
-			currentMemoryUsage -= removedLineSize
-			lines = lines[1:]
+		if currentMemoryUsage+lineSize > maxMemoryBytes {
+			for currentMemoryUsage+lineSize > maxMemoryBytes && len(lines) > 0 {
+				removedLineSize := len(lines[0]) + 1
+				currentMemoryUsage -= removedLineSize
+				lines = lines[1:]
+			}
 		}
 
 		lines = append(lines, line)
@@ -784,6 +785,10 @@ func downloadLogContent(logURL string, tailLines int) (string, int, *http.Respon
 
 	if err := scanner.Err(); err != nil {
 		return "", 0, httpResp, fmt.Errorf("failed to read log content: %w", err)
+	}
+
+	if len(lines) > tailLines {
+		lines = lines[len(lines)-tailLines:]
 	}
 
 	return strings.Join(lines, "\n"), totalLines, httpResp, nil
